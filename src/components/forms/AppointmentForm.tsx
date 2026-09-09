@@ -41,6 +41,7 @@ interface Appointment {
   id: string;
   title?: string;
   contactId?: string;
+  companyId?: string;
   branchId?: string;
   kind?: string;
   subServices?: string[];
@@ -61,6 +62,7 @@ interface Appointment {
 const appointmentSchema = z.object({
   title: z.string().optional(),
   contactId: z.string().min(1, "Please select a customer"),
+  companyId: z.string().optional(),
   branchId: z.string().min(1, "Please select a branch"),
   kind: z.enum(["Test Drive", "Periodic Service", "Repair", "Delivery", "Inspection"]).or(z.string()),
   subServices: z.array(z.string()).optional(),
@@ -137,6 +139,7 @@ const mapTypeToFrontend = (type: string): "Test Drive" | "Periodic Service" | "R
 
 export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBranchSelect }: AppointmentFormProps) {
   const queryClient = useQueryClient();
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
@@ -157,6 +160,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
     defaultValues: {
       title: initialData?.title || "",
       contactId: initialData?.contactId || "",
+      companyId: initialData?.companyId || "",
       branchId: initialData?.branchId || "",
       kind: initialData?.kind || "Periodic Service",
       subServices: initialData?.subServices || [],
@@ -188,7 +192,15 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
     },
   });
 
-  // Fetch branches from API
+  // Fetch companies from API
+  const { data: companiesResponse } = useQuery({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      return await apiClient.getCompanies();
+    },
+  });
+
+  // Fetch branches from API (fetch all branches)
   const { data: branchesResponse, isLoading: branchesLoading } = useQuery({
     queryKey: ['branches'],
     queryFn: async () => {
@@ -197,7 +209,13 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
   });
 
   const contactsData = contactsResponse?.data || [];
-  const branchesData = branchesResponse?.data || [];
+  const allBranchesData = branchesResponse?.data || [];
+  const companiesData = companiesResponse?.data || [];
+
+  // Filter branches client-side based on selected company
+  const branchesData = selectedCompanyId 
+    ? allBranchesData.filter((b: any) => b.company_id === selectedCompanyId || b.companyId === selectedCompanyId)
+    : allBranchesData;
 
   // Fetch vehicles for selected customer
   const { data: vehiclesResponse, isLoading: vehiclesLoading } = useQuery({
@@ -254,9 +272,12 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
     },
   });
 
+  // Watch form values for time slot generation
+  const selectedAdvisor = form.watch("advisor");
+
   // Fetch existing appointments for conflict checking
   const { data: appointmentsResponse, isLoading: appointmentsLoading } = useQuery({
-    queryKey: ['appointments', selectedBranchId, selectedDate],
+    queryKey: ['appointments', selectedBranchId, selectedDate, selectedAdvisor],
     queryFn: async () => {
       if (!selectedBranchId || !selectedDate) return { data: [] };
       try {
@@ -397,112 +418,135 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
     }
   }, [watchedBranchId, onBranchSelect]);
 
+  // Clear time when advisor changes
+  const watchedAdvisor = form.watch("advisor");
+  useEffect(() => {
+    form.setValue("time", "");
+  }, [watchedAdvisor, form]);
+
   // Get selected customer details
   const selectedCustomer = selectedCustomerId && contactsData.length > 0
-    ? contactsData.find((c: any) => c.id === selectedCustomerId) 
+    ? contactsData.find((c: any) => c.id === selectedCustomerId)
     : null;
-  
+
   // branchEmployees already filtered by branch_id in the query, no need to filter again
   const filteredBranchEmployees = branchEmployees;
 
-  // Generate time slots for selected advisor
-  const selectedAdvisor = form.watch("advisor");
-    
-  const generateTimeSlots = () => {
+  const generateTimeSlots = (specificAdvisor?: string) => {
     const slots = [];
-      
+    const targetAdvisor = specificAdvisor || selectedAdvisor;
+
     // Show loading state if appointments are being fetched
     if (appointmentsLoading) {
       return [];
     }
-      
-    // Get the selected advisor's schedule and slot duration
-    const advisor = branchEmployees.find((e: any) => 
-      `${e.first_name} ${e.last_name}`.trim() === selectedAdvisor || 
-      e.name === selectedAdvisor
-    );
-    const advisorSchedule = advisor?.schedule;
-    const slotDuration = advisor?.slot_duration || advisor?.slotDuration || 15;
-      
+
     // Get the day of the week for the selected date
     const selectedDateObj = new Date(selectedDate + 'T00:00:00');
     const dayIndex = selectedDateObj.getDay();
     const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayOfWeek = dayNames[dayIndex];
-      
-    // Get the working hours for the selected day
-    const daySchedule = advisorSchedule?.[dayOfWeek as keyof NonNullable<typeof advisorSchedule>];
-      
-    if (!daySchedule) {
-      return [];
-    }
-      
-    const startHour = parseInt(daySchedule.start.split(':')[0]);
-    const startMinute = parseInt(daySchedule.start.split(':')[1]);
-    const endHour = parseInt(daySchedule.end.split(':')[0]);
-    const endMinute = parseInt(daySchedule.end.split(':')[1]);
-      
-    // Generate time slots based on the advisor's schedule
-    let currentHour = startHour;
-    let currentMinute = startMinute;
-      
-    while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
-      const startTime = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
-      const endMinute = currentMinute + slotDuration;
-      const endHourFormatted = endMinute === 60 ? currentHour + 1 : currentHour;
-      const endMinuteFormatted = endMinute === 60 ? '00' : endMinute.toString().padStart(2, '0');
-      const endTime = `${endHourFormatted.toString().padStart(2, '0')}:${endMinuteFormatted}`;
-        
-      const slotEndTime = new Date();
-      slotEndTime.setHours(endHourFormatted, endMinuteFormatted);
-      const workEndTime = new Date();
-      workEndTime.setHours(endHour, endMinute);
-        
-      if (slotEndTime > workEndTime) {
-        break;
+
+    // Get employees to generate slots for
+    const employeesToProcess = targetAdvisor
+      ? branchEmployees.filter((e: any) =>
+          `${e.first_name} ${e.last_name}`.trim() === targetAdvisor ||
+          e.name === targetAdvisor
+        )
+      : branchEmployees;
+
+    // Generate slots for each employee
+    employeesToProcess.forEach((employee: any) => {
+      const advisorSchedule = employee?.schedule;
+      const slotDuration = employee?.slot_duration || employee?.slotDuration || 15;
+      const employeeName = `${employee.first_name} ${employee.last_name}`.trim() || employee.name;
+
+      // Get the working hours for the selected day
+      const daySchedule = advisorSchedule?.[dayOfWeek as keyof NonNullable<typeof advisorSchedule>];
+
+      if (!daySchedule) {
+        return;
       }
-        
-      // Check if this slot is already booked using real API data
-      const isBooked = existingAppointments.some(
-        (apt: any) => {
-          const appointmentAdvisor = apt.advisor;
-          const appointmentDate = apt.appointment_date;
-          const appointmentTime = apt.appointment_time;
-          const appointmentStatus = apt.status;
-          
-          // Normalize date for comparison (extract date part from ISO format)
-          const normalizedAppointmentDate = appointmentDate ? appointmentDate.split('T')[0] : '';
-          
-          // Map backend status to frontend status for comparison
-          const isCancelled = appointmentStatus === 'cancelled' || appointmentStatus === 'no_show';
-          
-          return appointmentAdvisor === selectedAdvisor &&   
-                 normalizedAppointmentDate === selectedDate &&   
-                 appointmentTime === startTime &&  
-                 !isCancelled;
+
+      const startHour = parseInt(daySchedule.start.split(':')[0]);
+      const startMinute = parseInt(daySchedule.start.split(':')[1]);
+      const endHour = parseInt(daySchedule.end.split(':')[0]);
+      const endMinute = parseInt(daySchedule.end.split(':')[1]);
+
+      // Generate time slots based on the employee's schedule
+      let currentHour = startHour;
+      let currentMinute = startMinute;
+
+      while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
+        const startTime = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+        const newEndMinute = currentMinute + slotDuration;
+        const endHourFormatted = newEndMinute === 60 ? currentHour + 1 : currentHour;
+        const endMinuteFormatted = newEndMinute === 60 ? '00' : newEndMinute.toString().padStart(2, '0');
+        const endTime = `${endHourFormatted.toString().padStart(2, '0')}:${endMinuteFormatted}`;
+
+        const slotEndTime = new Date();
+        slotEndTime.setHours(endHourFormatted, endMinuteFormatted);
+        const workEndTime = new Date();
+        workEndTime.setHours(endHour, endMinute);
+
+        if (slotEndTime > workEndTime) {
+          break;
         }
-      );
-        
-      // Only add slot if it's available (not booked)
-      if (!isBooked) {
-        slots.push({
-          startTime,
-          endTime,
-          available: true
-        });
+
+        // Check if this slot is already booked for this employee
+        const isBooked = existingAppointments.some(
+          (apt: any) => {
+            const appointmentAdvisor = apt.advisor;
+            const appointmentDate = apt.appointment_date;
+            const appointmentTime = apt.appointment_time;
+            const appointmentStatus = apt.status;
+
+            // Normalize date for comparison (extract date part from ISO format)
+            const normalizedAppointmentDate = appointmentDate ? appointmentDate.split('T')[0] : '';
+
+            // Map backend status to frontend status for comparison
+            const isCancelled = appointmentStatus === 'cancelled' || appointmentStatus === 'no_show';
+
+            return appointmentAdvisor === employeeName &&
+                   normalizedAppointmentDate === selectedDate &&
+                   appointmentTime === startTime &&
+                   !isCancelled;
+          }
+        );
+
+        // Only add slot if it's available (not booked)
+        if (!isBooked) {
+          // Check if this time slot already exists
+          const existingSlot = slots.find(s => s.startTime === startTime);
+          if (!existingSlot) {
+            slots.push({
+              startTime,
+              endTime,
+              available: true,
+              availableAdvisors: targetAdvisor ? [employeeName] : [employeeName]
+            });
+          } else {
+            // Add this advisor to the existing slot
+            if (!existingSlot.availableAdvisors.includes(employeeName)) {
+              existingSlot.availableAdvisors.push(employeeName);
+            }
+          }
+        }
+
+        // Move to next slot
+        currentMinute += slotDuration;
+        if (currentMinute >= 60) {
+          currentMinute = 0;
+          currentHour++;
+        }
       }
-        
-      // Move to next slot
-      currentMinute += slotDuration;
-      if (currentMinute >= 60) {
-        currentMinute = 0;
-        currentHour++;
-      }
-    }
-    return slots;
+    });
+
+    // Sort slots by time
+    return slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
   };
 
-  const availableTimeSlots = selectedAdvisor ? generateTimeSlots() : [];
+  const availableTimeSlots = generateTimeSlots();
 
   const handleAddVehicle = () => {
     if (!selectedCustomer) {
@@ -546,6 +590,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
   function onSubmit(data: AppointmentFormValues) {
     // Transform form data to backend format
     const appointmentPayload = {
+      company_id: data.companyId || null,
       branch_id: data.branchId,
       contact_id: data.contactId,
       vehicle_id: data.customerVehicleId || null,
@@ -698,6 +743,36 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                       <SelectItem value="Repair">Repair</SelectItem>
                       <SelectItem value="Delivery">Delivery</SelectItem>
                       <SelectItem value="Inspection">Inspection</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="companyId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-gray-600">Brand / Company</FormLabel>
+                  <Select onValueChange={(value) => {
+                    field.onChange(value);
+                    setSelectedCompanyId(value);
+                    form.setValue("branchId", "");
+                    setSelectedBranchId("");
+                  }} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="border-gray-300">
+                        <SelectValue placeholder="Select brand" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="">All Brands</SelectItem>
+                      {companiesData?.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -885,16 +960,41 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
             <FormField
               control={form.control}
               name="time"
-              render={({ field }) => (
+              render={({ field}) => (
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Time</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="time" 
-                      className="border-gray-300"
-                      {...field} 
-                    />
-                  </FormControl>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="border-gray-300">
+                        <SelectValue placeholder="Select time" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableTimeSlots.length > 0 ? (
+                        availableTimeSlots.map((slot: any) => (
+                          <SelectItem key={slot.startTime} value={slot.startTime}>
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-3 h-3" />
+                              <span>{slot.startTime}</span>
+                              {!selectedAdvisor && slot.availableAdvisors && slot.availableAdvisors.length > 0 && (
+                                <span className="text-xs text-gray-500">
+                                  ({slot.availableAdvisors.length} advisor{slot.availableAdvisors.length > 1 ? 's' : ''})
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="p-2 text-center text-xs text-gray-500">
+                          {selectedBranchId
+                            ? selectedAdvisor
+                              ? "No available time slots for this advisor"
+                              : "No available time slots for any advisor"
+                            : "Select a branch first"}
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

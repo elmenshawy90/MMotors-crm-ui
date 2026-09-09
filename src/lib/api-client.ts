@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
-const API_BASE_URL = (import.meta.env as any).VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = (import.meta.env as any).VITE_API_BASE_URL || 'https://api.al-brisha.com/api';
 
 class ApiClient {
   private client: AxiosInstance;
@@ -218,6 +218,32 @@ class ApiClient {
     return response.data.data;
   }
 
+  // Companies methods
+  async getCompanies(filters?: any) {
+    const response = await this.client.get('/companies', { params: filters });
+    return response.data;
+  }
+
+  async getCompany(id: string) {
+    const response = await this.client.get(`/companies/${id}`);
+    return response.data.data;
+  }
+
+  async createCompany(data: any) {
+    const response = await this.client.post('/companies', data);
+    return response.data.data;
+  }
+
+  async updateCompany(id: string, data: any) {
+    const response = await this.client.put(`/companies/${id}`, data);
+    return response.data.data;
+  }
+
+  async deleteCompany(id: string) {
+    const response = await this.client.delete(`/companies/${id}`);
+    return response.data;
+  }
+
   // Vehicles methods
   async getVehicles(filters?: any) {
     const response = await this.client.get('/vehicles', { params: filters });
@@ -257,6 +283,11 @@ class ApiClient {
   async deleteVehicle(id: string) {
     const response = await this.client.delete(`/vehicles/${id}`);
     return response.data;
+  }
+
+  async getVehicleStats(filters?: any) {
+    const response = await this.client.get('/vehicles/stats', { params: filters });
+    return response.data.data;
   }
 
   async bulkDeleteVehicles(ids: string[]) {
@@ -592,6 +623,14 @@ class ApiClient {
   }
 
   // Leads / Sales methods
+  async uploadKnowledgeFile(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await this.client.post('/upload/knowledge', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data.data as { url: string; filename: string; size: number; mimetype: string };
+  }
   async getLeads(filters?: any) {
     const response = await this.client.get('/leads', { params: filters });
     return response.data;

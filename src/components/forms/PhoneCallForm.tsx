@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,167 +12,201 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
+import { Calendar, Clock, User, Loader2 } from "lucide-react";
 
 interface PhoneCallFormProps {
   onSuccess?: () => void;
   editingCall?: any;
 }
 
+// Add N days to a date string (yyyy-mm-dd) and return yyyy-mm-dd
+function addDays(dateStr: string, days: number): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
 export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
   const queryClient = useQueryClient();
 
-  // Fetch real data from API
+  // ── Remote data ────────────────────────────────────────────────────────────
   const { data: contactsResponse } = useQuery({
-    queryKey: ['contacts'],
+    queryKey: ["contacts"],
     queryFn: () => apiClient.getContacts(),
   });
-
   const { data: branchesResponse } = useQuery({
-    queryKey: ['branches'],
+    queryKey: ["branches"],
     queryFn: () => apiClient.getBranches(),
   });
-
-  const { data: employeesResponse } = useQuery({
-    queryKey: ['employees'],
-    queryFn: () => apiClient.getEmployees(),
+  const { data: usersResponse } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => apiClient.getUsers(),
+  });
+  // Current logged-in user
+  const { data: profileData } = useQuery({
+    queryKey: ["profile"],
+    queryFn: () => apiClient.getProfile(),
   });
 
-  const { data: vehiclesResponse } = useQuery({
-    queryKey: ['vehicles'],
-    queryFn: () => apiClient.getVehicles(),
-  });
+  const contacts  = contactsResponse?.data  || [];
+  const branches  = branchesResponse?.data  || [];
+  const users     = usersResponse?.data     || [];
+  const profile   = profileData;
 
-  const contacts = contactsResponse?.data || [];
-  const branches = branchesResponse?.data || [];
-  const employees = employeesResponse?.data || [];
-  const vehicles = vehiclesResponse?.data || [];
-
+  // ── Form state ─────────────────────────────────────────────────────────────
   const [formData, setFormData] = useState({
-    contact_id: editingCall?.contact_id || "",
-    caller_name: editingCall?.caller_name || "",
-    caller_phone: editingCall?.caller_phone || "",
-    branch_id: editingCall?.branch_id || "",
-    agent_id: editingCall?.agent_id || "",
-    agent_name: editingCall?.agent_name || "",
-    direction: editingCall?.direction || "inbound",
-    status: editingCall?.status || "completed",
-    priority: editingCall?.priority || "Medium",
-    purpose: editingCall?.purpose || "inquiry",
-    subject: editingCall?.subject || "",
-    description: editingCall?.description || "",
-    call_duration: editingCall?.call_duration || 0,
-    notes: editingCall?.notes || "",
-    follow_up_required: editingCall?.follow_up_required || false,
-    follow_up_date: editingCall?.follow_up_date || "",
-    related_ticket_id: editingCall?.related_ticket_id || "",
-    related_appointment_id: editingCall?.related_appointment_id || "",
-    related_vehicle_id: editingCall?.related_vehicle_id || "",
-    satisfaction_rating: editingCall?.satisfaction_rating || 0,
-    tags: editingCall?.tags || [],
+    contact_id:        editingCall?.contact_id        || "",
+    caller_name:       editingCall?.caller_name        || "",
+    caller_phone:      editingCall?.caller_phone       || "",
+    branch_id:         editingCall?.branch_id          || "",
+    agent_id:          editingCall?.agent_id           || "",
+    agent_name:        editingCall?.agent_name         || "",
+    direction:         editingCall?.direction          || "inbound",
+    status:            editingCall?.status             || "completed",
+    purpose:           editingCall?.purpose            || "inquiry",
+    call_duration:     editingCall?.call_duration      || 0,
+    notes:             editingCall?.notes              || "",
+    follow_up_required:editingCall?.follow_up_required || false,
+    follow_up_date:    editingCall?.follow_up_date
+      ? new Date(editingCall.follow_up_date).toISOString().split("T")[0]
+      : "",
+    follow_up_date_2:  editingCall?.follow_up_date_2  || "",
+    follow_up_date_3:  editingCall?.follow_up_date_3  || "",
   });
 
-  const [selectedTags, setSelectedTags] = useState<string[]>(editingCall?.tags || []);
-  const availableTags = ["VIP", "Urgent", "Service", "Sales", "Support", "Follow-up", "Escalation", "Warranty"];
+  // ── Auto-fill agent from logged-in user on mount ───────────────────────────
+  useEffect(() => {
+    if (profile && !editingCall) {
+      const fullName = `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
+      setFormData((prev) => ({
+        ...prev,
+        agent_id:   profile.id    || "",
+        agent_name: fullName,
+        branch_id:  profile.branch_id || prev.branch_id,
+      }));
+    }
+  }, [profile, editingCall]);
 
-  // Mutations
+  // ── Auto-compute follow_up_date_2 and _3 when follow_up_date changes ──────
+  useEffect(() => {
+    if (formData.follow_up_date) {
+      setFormData((prev) => ({
+        ...prev,
+        follow_up_date_2: addDays(formData.follow_up_date, 1),
+        follow_up_date_3: addDays(formData.follow_up_date, 3),
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        follow_up_date_2: "",
+        follow_up_date_3: "",
+      }));
+    }
+  }, [formData.follow_up_date]);
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiClient.createPhoneCall(data);
-    },
+    mutationFn: (data: any) => apiClient.createPhoneCall(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-calls'] });
+      queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
       toast.success("Call created successfully");
       onSuccess?.();
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || "Failed to create call");
-    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || "Failed to create call"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return await apiClient.updatePhoneCall(id, data);
-    },
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      apiClient.updatePhoneCall(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-calls'] });
+      queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
       toast.success("Call updated successfully");
       onSuccess?.();
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || "Failed to update call");
-    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || "Failed to update call"),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
-    const callData = {
-      contact_id: formData.contact_id || null,
-      caller_name: formData.caller_name,
-      caller_phone: formData.caller_phone,
-      branch_id: formData.branch_id,
-      direction: formData.direction,
-      status: formData.status,
-      purpose: formData.purpose,
-      call_duration: formData.call_duration,
-      notes: formData.notes,
-      follow_up_required: formData.follow_up_required,
-      follow_up_date: formData.follow_up_required ? formData.follow_up_date : null,
-    };
-
-    if (editingCall) {
-      updateMutation.mutate({ id: editingCall.id, data: callData });
-    } else {
-      createMutation.mutate(callData);
-    }
-  };
-
+  // ── Handlers ───────────────────────────────────────────────────────────────
   const handleContactChange = (contactId: string) => {
     const contact = contacts.find((c: any) => c.id === contactId);
     if (contact) {
-      setFormData({
-        ...formData,
-        contact_id: contactId,
-        caller_name: contact.first_name + ' ' + contact.last_name,
+      setFormData((prev) => ({
+        ...prev,
+        contact_id:   contactId,
+        caller_name:  `${contact.first_name} ${contact.last_name}`,
         caller_phone: contact.phone,
-        branch_id: contact.branch_id,
-      });
+        branch_id:    contact.branch_id || prev.branch_id,
+      }));
     }
   };
 
-  const handleAgentChange = (agentId: string) => {
-    const agent = employees.find((e: any) => e.id === agentId);
-    if (agent) {
-      setFormData({
-        ...formData,
-        agent_id: agentId,
-        agent_name: agent.first_name + ' ' + agent.last_name,
-        branch_id: agent.branch_id,
-      });
+  const handleAgentChange = (userId: string) => {
+    const user = users.find((u: any) => u.id === userId);
+    if (user) {
+      setFormData((prev) => ({
+        ...prev,
+        agent_id:   userId,
+        agent_name: `${user.first_name} ${user.last_name}`.trim(),
+        branch_id:  user.branch_id || prev.branch_id,
+      }));
     }
   };
 
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.caller_phone) { toast.error("Phone number is required"); return; }
+    if (!formData.branch_id)    { toast.error("Branch is required"); return; }
+
+    const payload = {
+      contact_id:         formData.contact_id    || null,
+      caller_name:        formData.caller_name,
+      caller_phone:       formData.caller_phone,
+      branch_id:          formData.branch_id,
+      direction:          formData.direction,
+      status:             formData.status,
+      purpose:            formData.purpose,
+      call_duration:      formData.call_duration,
+      notes:              formData.notes,
+      follow_up_required: formData.follow_up_required,
+      follow_up_date:     formData.follow_up_required && formData.follow_up_date
+        ? formData.follow_up_date : null,
+      follow_up_date_2:   formData.follow_up_required && formData.follow_up_date_2
+        ? formData.follow_up_date_2 : null,
+      follow_up_date_3:   formData.follow_up_required && formData.follow_up_date_3
+        ? formData.follow_up_date_3 : null,
+    };
+
+    if (editingCall) {
+      updateMutation.mutate({ id: editingCall.id, data: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+
+      {/* Row 1: Contact + Phone */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="contact">Contact *</Label>
-          <Select value={formData.contact_id} onValueChange={handleContactChange} required>
+          <Select value={formData.contact_id} onValueChange={handleContactChange}>
             <SelectTrigger id="contact">
               <SelectValue placeholder="Select contact" />
             </SelectTrigger>
             <SelectContent>
-              {contacts.map((contact: any) => (
-                <SelectItem key={contact.id} value={contact.id}>
-                  {contact.first_name} {contact.last_name} - {contact.phone}
+              {contacts.map((c: any) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.first_name} {c.last_name} — {c.phone}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -191,19 +225,39 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
         </div>
       </div>
 
+      {/* Row 2: Agent (auto-filled) + Branch */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="agent">Agent *</Label>
-          <Select value={formData.agent_id} onValueChange={handleAgentChange} required>
+          <Label htmlFor="agent" className="flex items-center gap-1.5">
+            Agent *
+            {formData.agent_name && (
+              <Badge variant="outline" className="text-[10px] py-0 gap-1 font-normal">
+                <User className="h-2.5 w-2.5" />
+                Auto-filled
+              </Badge>
+            )}
+          </Label>
+          <Select
+            value={formData.agent_id}
+            onValueChange={handleAgentChange}
+          >
             <SelectTrigger id="agent">
               <SelectValue placeholder="Select agent" />
             </SelectTrigger>
             <SelectContent>
-              {employees.map((employee: any) => (
-                <SelectItem key={employee.id} value={employee.id}>
-                  {employee.first_name} {employee.last_name} - {employee.role}
+              {/* Current user at the top */}
+              {profile && (
+                <SelectItem value={profile.id}>
+                  ★ {profile.first_name} {profile.last_name} (You)
                 </SelectItem>
-              ))}
+              )}
+              {users
+                .filter((u: any) => u.id !== profile?.id)
+                .map((u: any) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.first_name} {u.last_name}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>
@@ -212,51 +266,43 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
           <Label htmlFor="branch">Branch *</Label>
           <Select
             value={formData.branch_id}
-            onValueChange={(value) => setFormData({ ...formData, branch_id: value })}
+            onValueChange={(v) => setFormData({ ...formData, branch_id: v })}
             required
           >
             <SelectTrigger id="branch">
               <SelectValue placeholder="Select branch" />
             </SelectTrigger>
             <SelectContent>
-              {branches.map((branch: any) => (
-                <SelectItem key={branch.id} value={branch.id}>
-                  {branch.name}
-                </SelectItem>
+              {branches.map((b: any) => (
+                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
 
+      {/* Row 3: Direction + Status + Purpose */}
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="direction">Direction *</Label>
           <Select
             value={formData.direction}
-            onValueChange={(value) => setFormData({ ...formData, direction: value })}
-            required
+            onValueChange={(v) => setFormData({ ...formData, direction: v })}
           >
-            <SelectTrigger id="direction">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger id="direction"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="inbound">Inbound</SelectItem>
               <SelectItem value="outbound">Outbound</SelectItem>
             </SelectContent>
           </Select>
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="status">Status *</Label>
           <Select
             value={formData.status}
-            onValueChange={(value) => setFormData({ ...formData, status: value })}
-            required
+            onValueChange={(v) => setFormData({ ...formData, status: v })}
           >
-            <SelectTrigger id="status">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger id="status"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="missed">Missed</SelectItem>
@@ -265,17 +311,13 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
             </SelectContent>
           </Select>
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="purpose">Purpose *</Label>
           <Select
             value={formData.purpose}
-            onValueChange={(value) => setFormData({ ...formData, purpose: value })}
-            required
+            onValueChange={(v) => setFormData({ ...formData, purpose: v })}
           >
-            <SelectTrigger id="purpose">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger id="purpose"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="inquiry">Inquiry</SelectItem>
               <SelectItem value="appointment">Appointment</SelectItem>
@@ -289,6 +331,7 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
         </div>
       </div>
 
+      {/* Row 4: Duration */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="duration">Duration (seconds)</Label>
@@ -296,22 +339,15 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
             id="duration"
             type="number"
             value={formData.call_duration}
-            onChange={(e) => setFormData({ ...formData, call_duration: parseInt(e.target.value) || 0 })}
+            onChange={(e) =>
+              setFormData({ ...formData, call_duration: parseInt(e.target.value) || 0 })
+            }
             placeholder="0"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="followUpDate">Follow-up Date</Label>
-          <Input
-            id="followUpDate"
-            type="date"
-            value={formData.follow_up_date}
-            onChange={(e) => setFormData({ ...formData, follow_up_date: e.target.value })}
           />
         </div>
       </div>
 
+      {/* Notes */}
       <div className="space-y-2">
         <Label htmlFor="notes">Notes</Label>
         <Textarea
@@ -323,6 +359,7 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
         />
       </div>
 
+      {/* Follow-up checkbox */}
       <div className="flex items-center space-x-2">
         <Checkbox
           id="followUpRequired"
@@ -331,14 +368,87 @@ export function PhoneCallForm({ onSuccess, editingCall }: PhoneCallFormProps) {
             setFormData({ ...formData, follow_up_required: checked as boolean })
           }
         />
-        <Label htmlFor="followUpRequired">Follow-up Required</Label>
+        <Label htmlFor="followUpRequired" className="cursor-pointer">
+          Follow-up Required
+        </Label>
       </div>
 
+      {/* Follow-up dates — shown only when follow-up is required */}
+      {formData.follow_up_required && (
+        <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            Follow-up Schedule
+          </p>
+
+          <div className="grid grid-cols-3 gap-4">
+            {/* Follow-up Date 1 — manual */}
+            <div className="space-y-1.5">
+              <Label htmlFor="fud1" className="text-xs font-medium flex items-center gap-1.5">
+                <Clock className="h-3 w-3 text-primary" />
+                Follow-up Date 1
+              </Label>
+              <Input
+                id="fud1"
+                type="date"
+                value={formData.follow_up_date}
+                onChange={(e) =>
+                  setFormData({ ...formData, follow_up_date: e.target.value })
+                }
+              />
+              <p className="text-[10px] text-muted-foreground">Set manually</p>
+            </div>
+
+            {/* Follow-up Date 2 — auto: +1 day */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium flex items-center gap-1.5">
+                <Clock className="h-3 w-3 text-orange-500" />
+                Follow-up Date 2
+                <Badge variant="outline" className="text-[10px] py-0 font-normal">
+                  Auto
+                </Badge>
+              </Label>
+              <Input
+                type="date"
+                value={formData.follow_up_date_2}
+                readOnly
+                className="bg-muted/50 cursor-not-allowed opacity-70"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                +1 day from Date 1{formData.follow_up_date_2 ? ` (${formData.follow_up_date_2})` : ""}
+              </p>
+            </div>
+
+            {/* Follow-up Date 3 — auto: +3 days */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium flex items-center gap-1.5">
+                <Clock className="h-3 w-3 text-red-500" />
+                Follow-up Date 3
+                <Badge variant="outline" className="text-[10px] py-0 font-normal">
+                  Auto
+                </Badge>
+              </Label>
+              <Input
+                type="date"
+                value={formData.follow_up_date_3}
+                readOnly
+                className="bg-muted/50 cursor-not-allowed opacity-70"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                +3 days from Date 1{formData.follow_up_date_3 ? ` (${formData.follow_up_date_3})` : ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="outline" onClick={onSuccess}>
           Cancel
         </Button>
-        <Button type="submit">
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {editingCall ? "Update Call" : "Create Call"}
         </Button>
       </div>

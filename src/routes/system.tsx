@@ -65,12 +65,6 @@ function formatBytes(mb: number) {
   return `${mb} MB`;
 }
 
-function formatReleaseDate(dateString: string) {
-  const date = new Date(dateString);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function StatusDot({ status }: { status: string }) {
   return (
     <span
@@ -508,7 +502,7 @@ function SystemStatusPage() {
               </Card>
 
               {/* ── API Latency ── */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {
                     label: "API Response Time",
@@ -533,14 +527,6 @@ function SystemStatusPage() {
                     color: "text-blue-600",
                     bg: "bg-blue-100",
                     note: "Running",
-                  },
-                  {
-                    label: "Release Date",
-                    value: formatReleaseDate(__BUILD_TIME__),
-                    icon: <CalendarCheck className="h-5 w-5" />,
-                    color: "text-violet-600",
-                    bg: "bg-violet-100",
-                    note: "Current deployment",
                   },
                 ].map((card) => (
                   <Card key={card.label} className="glass-card hover-lift">

@@ -125,13 +125,13 @@ const typeLabel: Record<AppointmentType, string> = {
 
 interface ColFilters {
   date: string; time: string; customer: string;
-  vehicle: string; type: string; branch: string;
-  advisor: string; status: string;
+  phone: string; vehicle: string; type: string;
+  branch: string; advisor: string; status: string;
 }
 
 const emptyFilters: ColFilters = {
-  date: "", time: "", customer: "", vehicle: "",
-  type: "", branch: "", advisor: "", status: "",
+  date: "", time: "", customer: "", phone: "",
+  vehicle: "", type: "", branch: "", advisor: "", status: "",
 };
 
 // ─── Inline filter components ─────────────────────────────────────────────────
@@ -285,6 +285,7 @@ function AppointmentsPage() {
       if (col.date     && !formatDate(a.appointment_date).includes(col.date))    return false;
       if (col.time     && !a.appointment_time.includes(col.time))                return false;
       if (col.customer && !lc(getCustomerName(a)).includes(lc(col.customer)))    return false;
+      if (col.phone    && !lc(a.customer_phone || "").includes(lc(col.phone)))   return false;
       if (col.vehicle  && !lc(getVehicleName(a)).includes(lc(col.vehicle)))      return false;
       if (col.type     && a.type !== col.type)                                   return false;
       if (col.branch   && !lc(a.branch?.name).includes(lc(col.branch)))          return false;
@@ -437,6 +438,7 @@ function AppointmentsPage() {
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Date</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Time</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Customer</TableHead>
+                          <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Phone</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Vehicle</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Type</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Branch</TableHead>
@@ -455,6 +457,9 @@ function AppointmentsPage() {
                           </TableHead>
                           <TableHead className="py-1.5 px-3">
                             <ColInput value={col.customer} onChange={setColField("customer")} placeholder="Filter…" />
+                          </TableHead>
+                          <TableHead className="py-1.5 px-3">
+                            <ColInput value={col.phone} onChange={setColField("phone")} placeholder="+20…" />
                           </TableHead>
                           <TableHead className="py-1.5 px-3">
                             <ColInput value={col.vehicle} onChange={setColField("vehicle")} placeholder="Filter…" />
@@ -532,6 +537,9 @@ function AppointmentsPage() {
                             </TableCell>
                             <TableCell>{a.appointment_time}</TableCell>
                             <TableCell>{getCustomerName(a)}</TableCell>
+                            <TableCell className="text-muted-foreground text-xs">
+                              {a.customer_phone || a.contact?.phone || "—"}
+                            </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="bg-background/50">
                                 {getVehicleName(a)}
@@ -562,7 +570,7 @@ function AppointmentsPage() {
                         ))}
                         {filtered.length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={9} className="py-12 text-center text-muted-foreground">
+                            <TableCell colSpan={10} className="py-12 text-center text-muted-foreground">
                               {anyColActive
                                 ? "No appointments match the column filters."
                                 : "No appointments match these filters."}

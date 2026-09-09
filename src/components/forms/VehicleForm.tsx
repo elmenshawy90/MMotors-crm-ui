@@ -24,12 +24,15 @@ import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 const vehicleSchema = z.object({
   vin: z.string().length(17, "VIN must be exactly 17 characters").optional().or(z.literal("")),
   licensePlate: z.string().min(1, "License plate is required"),
   model: z.string().min(1, "Model is required"),
   contactId: z.string().optional(),
+  companyId: z.string().optional(),
   branchId: z.string().min(1, "Branch is required"),
   status: z.enum(["available", "in_service", "sold", "reserved", "maintenance", "out_of_service"]),
   color: z.string().min(1, "Color is required"),
@@ -58,14 +61,29 @@ interface VehicleFormProps {
 
 export function VehicleForm({ initialData, onSuccess, prefillContactId }: VehicleFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
+  const [customModels, setCustomModels] = useState<string[]>([]);
+  const [isAddingModel, setIsAddingModel] = useState(false);
+  const [newModelName, setNewModelName] = useState("");
 
   // Use prefillContactId if provided, otherwise use initialData.contactId
   const lockedContactId = prefillContactId || initialData?.contactId || null;
 
+  // Fetch companies
+  const { data: companiesData } = useQuery({
+    queryKey: ['companies'],
+    queryFn: () => apiClient.getCompanies(),
+  });
+
   // Fetch branches
   const { data: branchesData } = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => apiClient.getBranches(),
+    queryKey: ['branches', selectedCompanyId],
+    queryFn: () => {
+      if (selectedCompanyId) {
+        return apiClient.getBranches({ company_id: selectedCompanyId });
+      }
+      return apiClient.getBranches();
+    },
   });
 
   // Fetch contacts (owners)
@@ -74,6 +92,7 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
     queryFn: () => apiClient.getContacts(),
   });
 
+  const companies = companiesData?.data || [];
   const branches = branchesData?.data || [];
   const contacts = contactsData?.data || [];
 
@@ -84,6 +103,7 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
       licensePlate: initialData?.licensePlate || "",
       model: initialData?.model || "",
       contactId: lockedContactId || "",
+      companyId: initialData?.companyId || "",
       branchId: initialData?.branchId || "",
       status: initialData?.status || "available",
       color: initialData?.color || "",
@@ -111,6 +131,7 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
         licensePlate: initialData.licensePlate || "",
         model: initialData.model || "",
         contactId: lockedContactId || initialData.contactId || "",
+        companyId: initialData.companyId || "",
         branchId: initialData.branchId || "",
         status: initialData.status || "available",
         color: initialData.color || "",
@@ -140,6 +161,7 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
         license_plate: data.licensePlate,
         model: data.model,
         make: data.make,
+        company_id: data.companyId || null,
         owner_id: data.contactId || null,
         branch_id: data.branchId,
         status: data.status,
@@ -211,17 +233,53 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
         <div className="grid grid-cols-2 gap-4">
           <FormField
             control={form.control}
+            name="companyId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Brand / Company</FormLabel>
+                <Select onValueChange={(value) => {
+                  field.onChange(value);
+                  setSelectedCompanyId(value);
+                  form.setValue("branchId", "");
+                  const company = companies.find((c) => c.id === value);
+                  if (company) {
+                    form.setValue("make", company.name);
+                  }
+                }} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="transition-all focus:ring-2 focus:ring-primary/20">
+                      <SelectValue placeholder="Select brand" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">All Brands</SelectItem>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="make"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Make</FormLabel>
                 <FormControl>
-                  <Input placeholder="Toyota, Honda, etc." className="transition-all focus:ring-2 focus:ring-primary/20" {...field} />
+                  <Input placeholder="Auto-filled from brand" className="transition-all focus:ring-2 focus:ring-primary/20" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="model"
@@ -237,30 +295,32 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
           />
         </div>
 
-        <FormField
-          control={form.control}
-          name="branchId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Branch *</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger className="transition-all focus:ring-2 focus:ring-primary/20">
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="branchId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Branch *</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="transition-all focus:ring-2 focus:ring-primary/20">
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FormField

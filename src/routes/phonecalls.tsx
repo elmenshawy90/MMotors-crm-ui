@@ -1,63 +1,38 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Phone,
-  PhoneIncoming,
-  PhoneOutgoing,
-  PhoneMissed,
-  Clock,
-  Search,
-  Filter,
-  Download,
-  MoreVertical,
-  Star,
-  AlertCircle,
-  CheckCircle,
-  TrendingUp,
-  Users,
-  Play,
-  Pause,
-  MessageSquare,
-  Calendar,
-  FileText,
-  Trash2,
-  Tag,
-  FileSpreadsheet,
-  Headphones,
-  Mic,
-  PhoneOff,
-  ArrowRight,
-  RefreshCw,
-  Plus,
+  Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, PhoneOff,
+  Clock, Search, MoreVertical, AlertCircle, CheckCircle,
+  Trash2, RefreshCw, Plus, Calendar,
+  User, Building, X, Edit, ArrowUpRight,
+  Loader2, Filter, Activity, CalendarPlus, LifeBuoy,
 } from "lucide-react";
 import { PageShell } from "@/components/AppTopbar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PhoneCallForm } from "@/components/forms/PhoneCallForm";
+import { AppointmentForm } from "@/components/forms/AppointmentForm";
+import { TicketForm } from "@/components/forms/TicketForm";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -68,319 +43,643 @@ export const Route = createFileRoute("/phonecalls")({
   head: () => ({
     meta: [
       { title: "Phone Calls — SIG" },
-      {
-        name: "description",
-        content:
-          "Phone call management system with detailed call logs, recordings, and customer follow-up tracking.",
-      },
-      { property: "og:title", content: "Phone Calls — SIG" },
-      {
-        property: "og:description",
-        content: "Manage incoming and outgoing calls with detailed logging and customer relationship tracking.",
-      },
+      { name: "description", content: "Phone call management with follow-up tracking." },
     ],
   }),
   component: PhoneCallsPage,
 });
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function initials(name: string) {
+  return (name || "?")
+    .split(" ").map((n) => n[0] || "").join("").toUpperCase().slice(0, 2);
+}
+
+function formatDuration(s: number) {
+  if (!s) return "—";
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+function formatDate(d?: string | null) {
+  if (!d) return "—";
+  try { return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return d; }
+}
+
+function formatDateTime(d?: string | null) {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleString("en-GB", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return d; }
+}
+
+function isToday(d?: string | null) {
+  if (!d) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return d.startsWith(today);
+}
+
+function isPast(d?: string | null) {
+  if (!d) return false;
+  return new Date(d) < new Date();
+}
+
+function isSoon(d?: string | null) {
+  if (!d) return false;
+  const diff = new Date(d).getTime() - Date.now();
+  return diff > 0 && diff < 86_400_000 * 3; // within 3 days
+}
+
+// ─── Style maps ───────────────────────────────────────────────────────────────
+
+const STATUS_COLOR: Record<string, string> = {
+  completed:  "bg-green-100 text-green-700 border-green-200",
+  missed:     "bg-red-100 text-red-700 border-red-200",
+  cancelled:  "bg-gray-100 text-gray-600 border-gray-200",
+  voicemail:  "bg-purple-100 text-purple-700 border-purple-200",
+};
+
+const DIR_COLOR: Record<string, string> = {
+  inbound:  "bg-blue-100 text-blue-700 border-blue-200",
+  outbound: "bg-emerald-100 text-emerald-700 border-emerald-200",
+};
+
+const PURPOSE_COLOR: Record<string, string> = {
+  inquiry:     "bg-blue-100 text-blue-700",
+  appointment: "bg-violet-100 text-violet-700",
+  complaint:   "bg-red-100 text-red-700",
+  support:     "bg-cyan-100 text-cyan-700",
+  sales:       "bg-orange-100 text-orange-700",
+  follow_up:   "bg-green-100 text-green-700",
+  other:       "bg-gray-100 text-gray-600",
+};
+
+function DirIcon({ dir }: { dir: string }) {
+  if (dir === "inbound")  return <PhoneIncoming  className="h-3.5 w-3.5" />;
+  if (dir === "outbound") return <PhoneOutgoing   className="h-3.5 w-3.5" />;
+  return <Phone className="h-3.5 w-3.5" />;
+}
+
+function StatusIcon({ status }: { status: string }) {
+  if (status === "completed") return <CheckCircle className="h-3.5 w-3.5" />;
+  if (status === "missed")    return <PhoneMissed  className="h-3.5 w-3.5" />;
+  if (status === "cancelled") return <PhoneOff     className="h-3.5 w-3.5" />;
+  return <Phone className="h-3.5 w-3.5" />;
+}
+
+// ─── Follow-up date chip ──────────────────────────────────────────────────────
+
+function FollowUpChip({ label, date, color }: { label: string; date?: string | null; color: string }) {
+  if (!date) return null;
+  const past = isPast(date);
+  const soon = isSoon(date);
+  return (
+    <div className={cn(
+      "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border",
+      past  ? "bg-red-50 text-red-700 border-red-200" :
+      soon  ? "bg-amber-50 text-amber-700 border-amber-200" :
+              `${color}`
+    )}>
+      <Calendar className="h-3 w-3 shrink-0" />
+      <span className="font-medium">{label}</span>
+      <span className="opacity-70">{formatDate(date)}</span>
+      {past && <span className="font-semibold">• Overdue</span>}
+      {!past && soon && <span className="font-semibold">• Soon</span>}
+    </div>
+  );
+}
+
+// ─── Call Card ────────────────────────────────────────────────────────────────
+
+function CallCard({
+  call, onOpen, onDelete, onEdit, selected, bulkMode, onSelect,
+}: {
+  call: any; onOpen: (c: any) => void; onDelete: (id: string) => void;
+  onEdit: (c: any) => void; selected: boolean; bulkMode: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <Card
+      className={cn(
+        "glass-card hover-lift transition-all group cursor-pointer relative",
+        selected && "ring-2 ring-primary ring-offset-2"
+      )}
+      onClick={() => bulkMode ? onSelect(call.id) : onOpen(call)}
+    >
+      {bulkMode && (
+        <div className="absolute top-3 left-3 z-10">
+          <Checkbox checked={selected} onCheckedChange={() => onSelect(call.id)} />
+        </div>
+      )}
+      <CardContent className={cn("p-4 space-y-3", bulkMode && "pl-10")}>
+        {/* Row 1 — avatar + name + badges */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar className="h-10 w-10 border-2 border-primary/20 shrink-0">
+              <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
+                {initials(call.caller_name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm group-hover:text-primary transition-colors truncate">
+                {call.caller_name || "Unknown"}
+              </p>
+              <p className="text-xs text-muted-foreground">{call.caller_phone}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Badge className={cn("text-[10px] border gap-1", DIR_COLOR[call.direction] || "bg-gray-100")}>
+              <DirIcon dir={call.direction} />
+              {call.direction}
+            </Badge>
+            <Badge className={cn("text-[10px] border gap-1", STATUS_COLOR[call.status] || "bg-gray-100")}>
+              <StatusIcon status={call.status} />
+              {call.status}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Row 2 — purpose + branch + duration */}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Badge className={cn("text-[10px]", PURPOSE_COLOR[call.purpose] || "bg-gray-100")}>
+              {(call.purpose || "other").replace("_", " ")}
+            </Badge>
+            {call.branch?.name && (
+              <span className="flex items-center gap-1">
+                <Building className="h-3 w-3" />
+                {call.branch.name}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDuration(call.call_duration)}
+          </div>
+        </div>
+
+        {/* Row 3 — notes preview */}
+        {call.notes && (
+          <p className="text-xs text-muted-foreground line-clamp-2 bg-muted/40 rounded px-2 py-1">
+            {call.notes}
+          </p>
+        )}
+
+        {/* Row 4 — follow-up dates */}
+        {call.follow_up_required && (
+          <div className="flex flex-wrap gap-1.5">
+            <FollowUpChip
+              label="FU 1" date={call.follow_up_date}
+              color="bg-blue-50 text-blue-700 border-blue-200"
+            />
+            <FollowUpChip
+              label="FU 2" date={call.follow_up_date_2}
+              color="bg-orange-50 text-orange-700 border-orange-200"
+            />
+            <FollowUpChip
+              label="FU 3" date={call.follow_up_date_3}
+              color="bg-red-50 text-red-700 border-red-200"
+            />
+          </div>
+        )}
+
+        {/* Row 5 — date + actions */}
+        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+          <span className="text-[10px] text-muted-foreground">
+            {formatDateTime(call.call_date)}
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost" size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpen(call); }}>
+                <ArrowUpRight className="mr-2 h-4 w-4" /> View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(call); }}>
+                <Edit className="mr-2 h-4 w-4" /> Edit Call
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={(e) => { e.stopPropagation(); onDelete(call.id); }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Detail Sheet ─────────────────────────────────────────────────────────────
+
+function CallDetailSheet({
+  call, open, onClose, onEdit, onDelete, onConvertToAppointment, onConvertToTicket,
+}: {
+  call: any | null; open: boolean; onClose: () => void;
+  onEdit: (c: any) => void; onDelete: (id: string) => void;
+  onConvertToAppointment: (c: any) => void;
+  onConvertToTicket: (c: any) => void;
+}) {
+  if (!call) return null;
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+        <SheetHeader className="mb-4">
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-lg">{call.caller_name}</SheetTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => onEdit(call)}>
+                <Edit className="h-3.5 w-3.5 mr-1" /> Edit
+              </Button>
+              <Button
+                size="sm" variant="destructive"
+                onClick={() => { onDelete(call.id); onClose(); }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+          <SheetDescription>{call.caller_phone}</SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-5">
+          {/* Status row */}
+          <div className="flex flex-wrap gap-2">
+            <Badge className={cn("border", DIR_COLOR[call.direction] || "bg-gray-100")}>
+              <DirIcon dir={call.direction} />
+              <span className="ml-1 capitalize">{call.direction}</span>
+            </Badge>
+            <Badge className={cn("border", STATUS_COLOR[call.status] || "bg-gray-100")}>
+              <StatusIcon status={call.status} />
+              <span className="ml-1 capitalize">{call.status}</span>
+            </Badge>
+            <Badge className={cn(PURPOSE_COLOR[call.purpose] || "bg-gray-100")}>
+              {(call.purpose || "other").replace("_", " ")}
+            </Badge>
+          </div>
+
+          {/* Convert actions */}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1 bg-primary/10 text-primary hover:bg-primary/20 border border-primary/30"
+              variant="ghost"
+              onClick={() => { onConvertToAppointment(call); onClose(); }}
+            >
+              <CalendarPlus className="mr-2 h-4 w-4" />
+              Convert to Appointment
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200"
+              variant="ghost"
+              onClick={() => { onConvertToTicket(call); onClose(); }}
+            >
+              <LifeBuoy className="mr-2 h-4 w-4" />
+              Convert to Ticket
+            </Button>
+          </div>
+
+          {/* Key info grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: <Clock className="h-4 w-4 text-muted-foreground" />,    label: "Date",     value: formatDateTime(call.call_date)            },
+              { icon: <Activity className="h-4 w-4 text-muted-foreground" />, label: "Duration", value: formatDuration(call.call_duration)         },
+              { icon: <Building className="h-4 w-4 text-muted-foreground" />, label: "Branch",   value: call.branch?.name || "—"                   },
+              { icon: <User className="h-4 w-4 text-muted-foreground" />,     label: "Agent",    value: call.agent_name || call.creator?.first_name
+                  ? `${call.creator?.first_name} ${call.creator?.last_name}`.trim() : "—"       },
+            ].map((row) => (
+              <div key={row.label} className="rounded-lg bg-muted/40 p-3 space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {row.icon} {row.label}
+                </div>
+                <p className="text-sm font-semibold">{row.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Notes */}
+          {call.notes && (
+            <>
+              <Separator />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Notes
+                </p>
+                <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-3">
+                  {call.notes}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* Follow-up section */}
+          {call.follow_up_required && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                  <Calendar className="h-3.5 w-3.5" /> Follow-up Schedule
+                </p>
+                <div className="space-y-2">
+                  {/* FU 1 */}
+                  <div className={cn(
+                    "flex items-center justify-between rounded-lg border p-3",
+                    isPast(call.follow_up_date)
+                      ? "bg-red-50 border-red-200"
+                      : "bg-blue-50 border-blue-200"
+                  )}>
+                    <div>
+                      <p className="text-xs font-semibold text-blue-700">Follow-up 1</p>
+                      <p className="text-sm font-bold">{formatDate(call.follow_up_date)}</p>
+                      <p className="text-[10px] text-muted-foreground">Set manually</p>
+                    </div>
+                    {isPast(call.follow_up_date)
+                      ? <Badge className="bg-red-100 text-red-700 border-red-200 border">Overdue</Badge>
+                      : isSoon(call.follow_up_date)
+                      ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 border">Soon</Badge>
+                      : <Badge className="bg-blue-100 text-blue-700 border-blue-200 border">Upcoming</Badge>
+                    }
+                  </div>
+
+                  {/* FU 2 */}
+                  {call.follow_up_date_2 && (
+                    <div className={cn(
+                      "flex items-center justify-between rounded-lg border p-3",
+                      isPast(call.follow_up_date_2)
+                        ? "bg-red-50 border-red-200"
+                        : "bg-orange-50 border-orange-200"
+                    )}>
+                      <div>
+                        <p className="text-xs font-semibold text-orange-700">Follow-up 2</p>
+                        <p className="text-sm font-bold">{formatDate(call.follow_up_date_2)}</p>
+                        <p className="text-[10px] text-muted-foreground">+1 day from FU1</p>
+                      </div>
+                      {isPast(call.follow_up_date_2)
+                        ? <Badge className="bg-red-100 text-red-700 border-red-200 border">Overdue</Badge>
+                        : isSoon(call.follow_up_date_2)
+                        ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 border">Soon</Badge>
+                        : <Badge className="bg-orange-100 text-orange-700 border-orange-200 border">Upcoming</Badge>
+                      }
+                    </div>
+                  )}
+
+                  {/* FU 3 */}
+                  {call.follow_up_date_3 && (
+                    <div className={cn(
+                      "flex items-center justify-between rounded-lg border p-3",
+                      isPast(call.follow_up_date_3)
+                        ? "bg-red-50 border-red-200"
+                        : "bg-rose-50 border-rose-200"
+                    )}>
+                      <div>
+                        <p className="text-xs font-semibold text-rose-700">Follow-up 3</p>
+                        <p className="text-sm font-bold">{formatDate(call.follow_up_date_3)}</p>
+                        <p className="text-[10px] text-muted-foreground">+3 days from FU1</p>
+                      </div>
+                      {isPast(call.follow_up_date_3)
+                        ? <Badge className="bg-red-100 text-red-700 border-red-200 border">Overdue</Badge>
+                        : isSoon(call.follow_up_date_3)
+                        ? <Badge className="bg-amber-100 text-amber-700 border-amber-200 border">Soon</Badge>
+                        : <Badge className="bg-rose-100 text-rose-700 border-rose-200 border">Upcoming</Badge>
+                      }
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Contact info */}
+          {call.contact && (
+            <>
+              <Separator />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Linked Contact
+                </p>
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                  <Avatar className="h-9 w-9 border border-primary/20">
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                      {initials(`${call.contact.first_name} ${call.contact.last_name}`)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {call.contact.first_name} {call.contact.last_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{call.contact.phone}</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── Call Grid ────────────────────────────────────────────────────────────────
+
+function CallGrid({
+  calls, onOpen, onDelete, onEdit, selectedCalls, bulkMode, onSelect, emptyMessage,
+}: {
+  calls: any[]; onOpen: (c: any) => void; onDelete: (id: string) => void;
+  onEdit: (c: any) => void; selectedCalls: Set<string>; bulkMode: boolean;
+  onSelect: (id: string) => void; emptyMessage: string;
+}) {
+  if (calls.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+        <Phone className="h-12 w-12 opacity-20" />
+        <p className="text-sm">{emptyMessage}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {calls.map((call) => (
+        <CallCard
+          key={call.id}
+          call={call}
+          onOpen={onOpen}
+          onDelete={onDelete}
+          onEdit={onEdit}
+          selected={selectedCalls.has(call.id)}
+          bulkMode={bulkMode}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Purpose → ticket category mapping ───────────────────────────────────────
+function purposeToTicketCategory(purpose?: string): string {
+  const map: Record<string, string> = {
+    inquiry:     "general",
+    appointment: "general",
+    complaint:   "other",
+    support:     "technical",
+    sales:       "general",
+    follow_up:   "general",
+    other:       "other",
+  };
+  return map[purpose || "other"] || "general";
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 function PhoneCallsPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [q, setQ] = useState("");
-  const [branch, setBranch] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [category, setCategory] = useState("all");
-  const [priority, setPriority] = useState("all");
-  const [sortBy, setSortBy] = useState("recent");
-  const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
-  const [isBulkMode, setIsBulkMode] = useState(false);
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [q, setQ]             = useState("");
+  const [branch, setBranch]   = useState("all");
+  const [status, setStatus]   = useState("all");
+  const [purpose, setPurpose] = useState("all");
+  const [dir, setDir]         = useState("all");
+
+  // ── UI ─────────────────────────────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingCall, setEditingCall] = useState<any>(null);
+  const [activeTab, setActiveTab]               = useState("all");
+  const [isFormOpen, setIsFormOpen]             = useState(false);
+  const [editingCall, setEditingCall]           = useState<any | null>(null);
+  const [detailCall, setDetailCall]             = useState<any | null>(null);
+  const [detailOpen, setDetailOpen]             = useState(false);
+  const [deleteTarget, setDeleteTarget]         = useState<string | null>(null);
+  const [bulkMode, setBulkMode]                 = useState(false);
+  const [selectedCalls, setSelectedCalls]       = useState<Set<string>>(new Set());
+  // ── Convert state ──────────────────────────────────────────────────────────
+  const [convertApptCall, setConvertApptCall]   = useState<any | null>(null);
+  const [convertTicketCall, setConvertTicketCall] = useState<any | null>(null);
 
-  // Fetch phone calls from API
-  const { data: phoneCallsResponse, isLoading: phoneCallsLoading } = useQuery({
-    queryKey: ['phone-calls'],
-    queryFn: () => apiClient.getPhoneCalls(),
+  // ── Queries ────────────────────────────────────────────────────────────────
+  const { data: phoneCallsRes, isLoading, refetch } = useQuery({
+    queryKey: ["phone-calls"],
+    queryFn:  () => apiClient.getPhoneCalls(),
+    staleTime: 30_000,
   });
 
-  // Fetch branches from API
-  const { data: branchesResponse } = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => apiClient.getBranches(),
+  const { data: branchesRes } = useQuery({
+    queryKey: ["branches"],
+    queryFn:  () => apiClient.getBranches(),
   });
 
-  // Fetch contacts from API
-  const { data: contactsResponse } = useQuery({
-    queryKey: ['contacts'],
-    queryFn: () => apiClient.getContacts(),
-  });
+  const phoneCalls: any[] = phoneCallsRes?.data || [];
+  const branches:   any[] = branchesRes?.data    || [];
 
-  // Fetch vehicles from API
-  const { data: vehiclesResponse } = useQuery({
-    queryKey: ['vehicles'],
-    queryFn: () => apiClient.getVehicles(),
-  });
-
-  const phoneCalls = phoneCallsResponse?.data || [];
-  const branches = branchesResponse?.data || [];
-  const contacts = contactsResponse?.data || [];
-  const vehicles = vehiclesResponse?.data || [];
-
-  // Mutations
-  const deleteCallMutation = useMutation({
-    mutationFn: async (callId: string) => {
-      return await apiClient.deletePhoneCall(callId);
-    },
+  // ── Delete mutation ────────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiClient.deletePhoneCall(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-calls'] });
-      toast.success("Call deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
+      toast.success("Call deleted");
+      setDeleteTarget(null);
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || "Failed to delete call");
-    },
+    onError: () => toast.error("Failed to delete call"),
   });
 
-  const updateCallMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return await apiClient.updatePhoneCall(id, data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-calls'] });
-      toast.success("Call updated successfully");
-    },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || "Failed to update call");
-    },
-  });
+  // ── Filtering ──────────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    return phoneCalls
+      .filter((c) => branch  === "all" || c.branch_id === branch)
+      .filter((c) => status  === "all" || c.status    === status)
+      .filter((c) => purpose === "all" || c.purpose   === purpose)
+      .filter((c) => dir     === "all" || c.direction === dir)
+      .filter((c) => {
+        if (!q.trim()) return true;
+        const s = q.toLowerCase();
+        return (
+          (c.caller_name  || "").toLowerCase().includes(s) ||
+          (c.caller_phone || "").toLowerCase().includes(s) ||
+          (c.notes        || "").toLowerCase().includes(s)
+        );
+      });
+  }, [phoneCalls, q, branch, status, purpose, dir]);
 
-  const createCallMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiClient.createPhoneCall(data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-calls'] });
-      toast.success("Call created successfully");
-    },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || "Failed to create call");
-    },
-  });
+  // ── Tab data ───────────────────────────────────────────────────────────────
+  const today    = useMemo(() => filtered.filter((c) => isToday(c.call_date)), [filtered]);
+  const fuAll    = useMemo(() => filtered.filter((c) => c.follow_up_required && c.follow_up_date), [filtered]);
+  const fu2All   = useMemo(() => filtered.filter((c) => c.follow_up_required && c.follow_up_date_2), [filtered]);
+  const fu3All   = useMemo(() => filtered.filter((c) => c.follow_up_required && c.follow_up_date_3), [filtered]);
 
-  const list = useMemo(
-    () =>
-      phoneCalls
-        .filter((c: any) => (branch === "all" ? true : c.branch_id === branch))
-        .filter((c: any) => (status === "all" ? true : c.status === status))
-        .filter((c: any) => (category === "all" ? true : c.purpose === category))
-        .filter((c: any) => (priority === "all" ? true : c.priority === priority))
-        .filter((c: any) =>
-          (c.caller_name + c.caller_phone + c.notes + c.direction)
-            .toLowerCase()
-            .includes(q.toLowerCase())
-        )
-        .sort((a: any, b: any) => {
-          if (sortBy === "recent") return new Date(b.call_date).getTime() - new Date(a.call_date).getTime();
-          if (sortBy === "duration") return (b.call_duration || 0) - (a.call_duration || 0);
-          if (sortBy === "priority") {
-            const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
-            return priorityOrder[a.priority] - priorityOrder[b.priority];
-          }
-          return 0;
-        }),
-    [q, branch, status, category, priority, phoneCalls, sortBy]
+  // Overdue counts for badge
+  const fuOverdue  = fuAll.filter((c)  => isPast(c.follow_up_date)).length;
+  const fu2Overdue = fu2All.filter((c) => isPast(c.follow_up_date_2)).length;
+  const fu3Overdue = fu3All.filter((c) => isPast(c.follow_up_date_3)).length;
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => ({
+    total:     phoneCalls.length,
+    completed: phoneCalls.filter((c) => c.status    === "completed").length,
+    missed:    phoneCalls.filter((c) => c.status    === "missed").length,
+    inbound:   phoneCalls.filter((c) => c.direction === "inbound").length,
+    outbound:  phoneCalls.filter((c) => c.direction === "outbound").length,
+    followUp:  phoneCalls.filter((c) => c.follow_up_required).length,
+    avgDur:    (() => {
+      const withDur = phoneCalls.filter((c) => c.call_duration);
+      if (!withDur.length) return 0;
+      return Math.round(withDur.reduce((s, c) => s + c.call_duration, 0) / withDur.length);
+    })(),
+  }), [phoneCalls]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const openDetail = (call: any) => { setDetailCall(call); setDetailOpen(true); };
+  const openEdit   = (call: any) => { setEditingCall(call); setIsFormOpen(true); };
+  const confirmDel = (id: string)  => setDeleteTarget(id);
+
+  const toggleOne = (id: string) => {
+    const s = new Set(selectedCalls);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setSelectedCalls(s);
+  };
+
+  const toggleAll = () => {
+    if (selectedCalls.size === filtered.length) setSelectedCalls(new Set());
+    else setSelectedCalls(new Set(filtered.map((c) => c.id)));
+  };
+
+  const bulkDelete = () => {
+    if (!selectedCalls.size) return;
+    if (!confirm(`Delete ${selectedCalls.size} calls?`)) return;
+    selectedCalls.forEach((id) => deleteMutation.mutate(id));
+    setSelectedCalls(new Set());
+    setBulkMode(false);
+  };
+
+  // ── Tab badge helper ───────────────────────────────────────────────────────
+  const TabBadge = ({ count, overdue = 0 }: { count: number; overdue?: number }) => (
+    <span className={cn(
+      "ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold",
+      overdue > 0 ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"
+    )}>
+      {count}
+    </span>
   );
 
-  // Statistics calculations
-  const stats = useMemo(() => {
-    const totalCalls = phoneCalls.length;
-    const byStatus = {
-      inbound: phoneCalls.filter((c: any) => c.direction === "inbound").length,
-      outbound: phoneCalls.filter((c: any) => c.direction === "outbound").length,
-      missed: phoneCalls.filter((c: any) => c.status === "missed").length,
-      completed: phoneCalls.filter((c: any) => c.status === "completed").length,
-      cancelled: phoneCalls.filter((c: any) => c.status === "cancelled").length,
-      voicemail: phoneCalls.filter((c: any) => c.status === "voicemail").length,
-    };
-    const byPriority = {
-      Urgent: phoneCalls.filter((c: any) => c.priority === "Urgent").length,
-      High: phoneCalls.filter((c: any) => c.priority === "High").length,
-      Medium: phoneCalls.filter((c: any) => c.priority === "Medium").length,
-      Low: phoneCalls.filter((c: any) => c.priority === "Low").length,
-    };
-    const totalDuration = phoneCalls.reduce((sum: number, c: any) => sum + (c.call_duration || 0), 0);
-    const avgDuration = totalCalls > 0 ? Math.round(totalDuration / phoneCalls.filter((c: any) => c.call_duration).length) : 0;
-    const followUpRequired = phoneCalls.filter((c: any) => c.follow_up_required).length;
-    const avgSatisfaction = phoneCalls.filter((c: any) => c.satisfaction_rating).length > 0
-      ? Math.round(phoneCalls.reduce((sum: number, c: any) => sum + (c.satisfaction_rating || 0), 0) / phoneCalls.filter((c: any) => c.satisfaction_rating).length)
-      : 0;
-
-    return { totalCalls, byStatus, byPriority, totalDuration, avgDuration, followUpRequired, avgSatisfaction };
-  }, [phoneCalls]);
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+  const cardProps = {
+    onOpen: openDetail, onDelete: confirmDel, onEdit: openEdit,
+    selectedCalls, bulkMode, onSelect: toggleOne,
   };
 
-  const getStatusColor = (status: string) => {
-    const colors = {
-      inbound: "bg-blue-500/20 text-blue-700",
-      outbound: "bg-green-500/20 text-green-700",
-      missed: "bg-red-500/20 text-red-700",
-      completed: "bg-emerald-500/20 text-emerald-700",
-      cancelled: "bg-gray-500/20 text-gray-700",
-      voicemail: "bg-purple-500/20 text-purple-700",
-    };
-    return colors[status as keyof typeof colors] || "bg-gray-500/20 text-gray-600";
-  };
-
-  const getStatusIcon = (status: string) => {
-    const icons = {
-      inbound: PhoneIncoming,
-      outbound: PhoneOutgoing,
-      missed: PhoneMissed,
-      completed: CheckCircle,
-      cancelled: PhoneOff,
-      voicemail: Play,
-    };
-    return icons[status as keyof typeof icons] || Phone;
-  };
-
-  const getPriorityColor = (priority: string) => {
-    const colors = {
-      Urgent: "bg-red-500/20 text-red-700 border-red-500/30",
-      High: "bg-orange-500/20 text-orange-700 border-orange-500/30",
-      Medium: "bg-yellow-500/20 text-yellow-700 border-yellow-500/30",
-      Low: "bg-green-500/20 text-green-700 border-green-500/30",
-    };
-    return colors[priority as keyof typeof colors] || "bg-gray-500/20 text-gray-600";
-  };
-
-  const getCategoryColor = (category: string) => {
-    const colors = {
-      inquiry: "bg-blue-500/20 text-blue-700",
-      appointment: "bg-purple-500/20 text-purple-700",
-      support: "bg-cyan-500/20 text-cyan-700",
-      complaint: "bg-red-500/20 text-red-700",
-      follow_up: "bg-green-500/20 text-green-700",
-      sales: "bg-orange-500/20 text-orange-700",
-      other: "bg-gray-500/20 text-gray-600",
-    };
-    return colors[category as keyof typeof colors] || "bg-gray-500/20 text-gray-600";
-  };
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const toggleCallSelection = (callId: string) => {
-    const newSelection = new Set(selectedCalls);
-    if (newSelection.has(callId)) {
-      newSelection.delete(callId);
-    } else {
-      newSelection.add(callId);
-    }
-    setSelectedCalls(newSelection);
-  };
-
-  const toggleAllCalls = () => {
-    if (selectedCalls.size === list.length) {
-      setSelectedCalls(new Set());
-    } else {
-      setSelectedCalls(new Set(list.map((c) => c.id)));
-    }
-  };
-
-  const handleBulkDelete = () => {
-    if (selectedCalls.size === 0) return;
-    selectedCalls.forEach((callId) => {
-      deleteCallMutation.mutate(callId);
-    });
-    setSelectedCalls(new Set());
-    setIsBulkMode(false);
-  };
-
-  const handleBulkExport = () => {
-    if (selectedCalls.size === 0) return;
-    const selectedData = list.filter((c: any) => selectedCalls.has(c.id));
-    toast.success(`Exporting ${selectedData.length} calls`);
-    setIsBulkMode(false);
-  };
-
-  const handleBulkTag = () => {
-    if (selectedCalls.size === 0) return;
-    toast.info(`Add tags to ${selectedCalls.size} calls`);
-  };
-
-  const handleDeleteCall = (callId: string) => {
-    if (confirm("Are you sure you want to delete this call?")) {
-      deleteCallMutation.mutate(callId);
-    }
-  };
-
-  const handleEditCall = (call: any) => {
-    setEditingCall(call);
-    setIsAddModalOpen(true);
-  };
-
-  const handleReturnCall = (call: any) => {
-    const newCall = {
-      ...call,
-      id: undefined,
-      direction: "outbound",
-      call_date: new Date().toISOString(),
-      call_duration: undefined,
-      notes: `Return call regarding: ${call.notes}`,
-    };
-    createCallMutation.mutate(newCall);
-  };
-
-  const handleScheduleCallback = (call: any) => {
-    const date = prompt("Enter callback date (YYYY-MM-DD):");
-    if (date) {
-      const time = prompt("Enter callback time (HH:MM):");
-      if (time) {
-        const newCall = {
-          ...call,
-          id: undefined,
-          direction: "outbound",
-          notes: `Scheduled callback for ${date} at ${time}`,
-          follow_up_required: true,
-          follow_up_date: `${date}T${time}:00`,
-        };
-        createCallMutation.mutate(newCall);
-        toast.success("Callback scheduled successfully!");
-      }
-    }
-  };
-
-  const handleSendMessage = (call: any) => {
-    const message = prompt(`Enter message for ${call.caller_name}:`);
-    if (message) {
-      toast.success(`Message sent to ${call.caller_name}: ${message}`);
-    }
-  };
-
-  const handleCompleteCall = (callId: string) => {
-    const call = phoneCalls.find((c: any) => c.id === callId);
-    if (call) {
-      updateCallMutation.mutate({
-        id: callId,
-        data: {
-          status: "completed",
-          call_duration: Math.floor((new Date().getTime() - new Date(call.call_date).getTime()) / 1000),
-        },
-      });
-    }
-  };
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar
@@ -388,120 +687,68 @@ function PhoneCallsPage() {
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         currentTitle="Phone Calls"
       />
+
       <div className={cn("transition-all duration-300", sidebarCollapsed ? "ml-16" : "ml-64")}>
         <PageShell
           title="Phone Calls"
-          subtitle="Incoming and outgoing call management with detailed logging, recordings, and customer follow-up tracking."
+          subtitle="Manage call logs, track follow-ups, and monitor agent performance."
           showTopbar={false}
         >
-          {/* Statistics Dashboard */}
-          <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-5 card-stagger">
-            <Card className="glass-card hover-lift transition-all button-press">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Phone className="h-5 w-5 text-primary" />
+          {/* ── Stats ── */}
+          <div className="mb-6 grid gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
+            {[
+              { label: "Total",     value: stats.total,     color: "text-foreground",  bg: "bg-primary/10",    icon: <Phone className="h-4 w-4 text-primary" />            },
+              { label: "Completed", value: stats.completed, color: "text-green-600",   bg: "bg-green-100",     icon: <CheckCircle className="h-4 w-4 text-green-500" />    },
+              { label: "Missed",    value: stats.missed,    color: "text-red-600",     bg: "bg-red-100",       icon: <PhoneMissed className="h-4 w-4 text-red-500" />      },
+              { label: "Inbound",   value: stats.inbound,   color: "text-blue-600",    bg: "bg-blue-100",      icon: <PhoneIncoming className="h-4 w-4 text-blue-500" />   },
+              { label: "Outbound",  value: stats.outbound,  color: "text-emerald-600", bg: "bg-emerald-100",   icon: <PhoneOutgoing className="h-4 w-4 text-emerald-500" />},
+              { label: "Follow-ups",value: stats.followUp,  color: "text-orange-600",  bg: "bg-orange-100",    icon: <AlertCircle className="h-4 w-4 text-orange-500" />   },
+              { label: "Avg Dur.",  value: formatDuration(stats.avgDur), color: "text-violet-600", bg: "bg-violet-100", icon: <Clock className="h-4 w-4 text-violet-500" /> },
+            ].map((s) => (
+              <Card key={s.label} className="glass-card hover-lift transition-all">
+                <CardContent className="p-3">
+                  <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-2", s.bg)}>
+                    {s.icon}
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold stat-counter">{stats.totalCalls}</p>
-                    <p className="text-xs text-muted-foreground">Total Calls</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card hover-lift transition-all button-press">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-500/10">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold stat-counter">{stats.byStatus.completed}</p>
-                    <p className="text-xs text-muted-foreground">Completed</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card hover-lift transition-all button-press">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-red-500/10">
-                    <PhoneMissed className="h-5 w-5 text-red-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold stat-counter">{stats.byStatus.missed}</p>
-                    <p className="text-xs text-muted-foreground">Missed</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card hover-lift transition-all button-press">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/10">
-                    <Clock className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold stat-counter">{formatDuration(stats.avgDuration)}</p>
-                    <p className="text-xs text-muted-foreground">Avg Duration</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card hover-lift transition-all button-press">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-orange-500/10">
-                    <AlertCircle className="h-5 w-5 text-orange-500" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold stat-counter">{stats.followUpRequired}</p>
-                    <p className="text-xs text-muted-foreground">Follow-ups</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <p className={cn("text-xl font-bold", s.color)}>{s.value}</p>
+                  <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
-          {phoneCallsLoading && (
-            <div className="text-center py-12">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
-              <p className="mt-4 text-muted-foreground">Loading phone calls...</p>
-            </div>
-          )}
-
-          {/* Search and Filter Bar */}
-          <div className="mb-6 flex flex-wrap gap-3 items-center justify-between">
-            <div className="flex flex-wrap gap-3">
+          {/* ── Toolbar ── */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* Filters */}
+            <div className="flex flex-wrap gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search contact, phone, subject, agent..."
-                  className="max-w-sm pl-10"
+                  value={q} onChange={(e) => setQ(e.target.value)}
+                  placeholder="Name, phone, notes…"
+                  className="pl-9 w-[220px]"
                 />
               </div>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
+              <Select value={dir} onValueChange={setDir}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Direction" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="inbound">Inbound</SelectItem>
+                  <SelectItem value="outbound">Outbound</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="missed">Missed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="voicemail">Voicemail</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="Purpose" />
-                </SelectTrigger>
+              <Select value={purpose} onValueChange={setPurpose}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Purpose" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Purposes</SelectItem>
                   <SelectItem value="inquiry">Inquiry</SelectItem>
@@ -513,270 +760,332 @@ function PhoneCallsPage() {
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priority</SelectItem>
-                  <SelectItem value="Urgent">Urgent</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Medium">Medium</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                </SelectContent>
-              </Select>
               <Select value={branch} onValueChange={setBranch}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Branch" />
-                </SelectTrigger>
+                <SelectTrigger className="w-[160px]"><SelectValue placeholder="Branch" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Branches</SelectItem>
                   {branches.map((b: any) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Most Recent</SelectItem>
-                  <SelectItem value="duration">Duration</SelectItem>
-                  <SelectItem value="priority">Priority</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
-            <div className="flex gap-2 items-center">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  className="h-4 w-4"
-                  checked={isBulkMode}
-                  onCheckedChange={() => setIsBulkMode(!isBulkMode)}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="hover-lift button-press"
-                  onClick={() => setIsBulkMode(!isBulkMode)}
-                >
-                  Bulk Actions
-                </Button>
-              </div>
-              <Button variant="outline" size="sm" className="hover-lift button-press">
-                <Download className="mr-2 h-4 w-4" /> Export All
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant={bulkMode ? "default" : "outline"} size="sm"
+                onClick={() => { setBulkMode(!bulkMode); setSelectedCalls(new Set()); }}
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                {bulkMode ? "Exit Bulk" : "Bulk"}
               </Button>
-              <Dialog open={isAddModalOpen} onOpenChange={(open) => {
-                setIsAddModalOpen(open);
-                if (!open) {
-                  setEditingCall(null);
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Button className="hover-lift button-press">
-                    <Plus className="mr-2 h-4 w-4" /> New Call
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>{editingCall ? "Edit Phone Call" : "New Phone Call"}</DialogTitle>
-                  </DialogHeader>
-                  <PhoneCallForm
-                    editingCall={editingCall || undefined}
-                    onSuccess={() => {
-                      setIsAddModalOpen(false);
-                      setEditingCall(null);
-                    }}
-                  />
-                </DialogContent>
-              </Dialog>
+              <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+                <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+              </Button>
+              <Button onClick={() => { setEditingCall(null); setIsFormOpen(true); }} className="hover-lift">
+                <Plus className="mr-2 h-4 w-4" /> New Call
+              </Button>
             </div>
           </div>
 
-          {/* Bulk Action Bar */}
-          {isBulkMode && (
-            <div className="mb-4 p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between fade-in">
-              <div className="flex items-center gap-4">
-                <Checkbox
-                  checked={selectedCalls.size === list.length && list.length > 0}
-                  onCheckedChange={toggleAllCalls}
-                  className="button-press"
-                />
-                <span className="font-medium">{selectedCalls.size} calls selected</span>
+          {/* ── Bulk bar ── */}
+          {bulkMode && (
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-primary/10 border border-primary/20 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Checkbox checked={selectedCalls.size === filtered.length && filtered.length > 0} onCheckedChange={toggleAll} />
+                <span className="text-sm font-medium">{selectedCalls.size} selected</span>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="hover-lift button-press"
-                  onClick={handleBulkTag}
-                  disabled={selectedCalls.size === 0}
-                >
-                  <Tag className="mr-2 h-4 w-4" /> Add Tags
+                <Button size="sm" variant="destructive" disabled={!selectedCalls.size} onClick={bulkDelete}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete Selected
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="hover-lift button-press"
-                  onClick={handleBulkExport}
-                  disabled={selectedCalls.size === 0}
-                >
-                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Export
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="hover-lift button-press"
-                  onClick={handleBulkDelete}
-                  disabled={selectedCalls.size === 0}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" /> Delete
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setIsBulkMode(false);
-                    setSelectedCalls(new Set());
-                  }}
-                >
-                  Cancel
+                <Button size="sm" variant="ghost" onClick={() => { setBulkMode(false); setSelectedCalls(new Set()); }}>
+                  <X className="mr-2 h-4 w-4" /> Cancel
                 </Button>
               </div>
             </div>
           )}
 
-          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
-            {list.map((call: any, index) => {
-              const StatusIcon = getStatusIcon(call.direction);
-              const contact = contacts.find((c: any) => c.id === call.contact_id);
-              const branch = branches.find((b: any) => b.id === call.branch_id);
-
-              return (
-                <Link key={call.id} to={`/phonecalls/$callId`} params={{ callId: call.id }} className="block outline-none ring-primary focus-visible:ring-2 rounded-xl">
-                  <Card
-                    className="h-full glass-card hover-lift transition-all group button-press scale-in relative"
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                  <CardContent className="space-y-4 p-5">
-                    {/* Header with Contact and Status */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-12 w-12 border-2 border-primary/20">
-                          <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
-                            {getInitials(call.caller_name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                            {call.caller_name}
-                          </p>
-                          <p className="text-sm text-muted-foreground">{call.caller_phone}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className={getStatusColor(call.direction)} variant="secondary">
-                          <StatusIcon className="h-3 w-3 mr-1" />
-                          {call.direction}
-                        </Badge>
-                        <Badge className={getStatusColor(call.status)} variant="secondary">
-                          {call.status}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Call Details */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Badge className={getCategoryColor(call.purpose)} variant="secondary">
-                            {call.purpose}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">{branch?.name || 'Unknown'}</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">{call.notes || 'No notes'}</p>
-                      </div>
-
-                      {/* Related Information */}
-                      <div className="flex flex-wrap gap-2">
-                        {call.follow_up_required && (
-                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Follow-up Required
-                          </Badge>
-                        )}
-                        {call.recording_url && (
-                          <Badge variant="outline" className="text-xs">
-                            <Play className="h-3 w-3 mr-1" />
-                            Recording
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Call Metadata */}
-                      <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            <span>{new Date(call.call_date).toLocaleString()}</span>
-                          </div>
-                          {call.call_duration && (
-                            <div className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              <span>{formatDuration(call.call_duration)}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-3 border-t">
-                      <div className="flex gap-2">
-                        {call.follow_up_required && (
-                          <Button variant="outline" size="sm" className="hover-lift button-press">
-                            <RefreshCw className="h-4 w-4 mr-1" />
-                            Follow-up
-                          </Button>
-                        )}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10" onClick={(e) => e.preventDefault()}>
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleDeleteCall(call.id); }} className="text-red-600">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Call
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardContent>
-                </Card>
-                </Link>
-              );
-            })}
-          </div>
-
-          {list.length === 0 && (
-            <div className="text-center py-12">
-              <Phone className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-              <p className="text-lg font-medium text-muted-foreground">No phone calls found</p>
-              <p className="text-sm text-muted-foreground">Try adjusting your search or filters</p>
+          {/* ── Loading ── */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>Loading calls…</span>
             </div>
+          )}
+
+          {/* ── Tabs ── */}
+          {!isLoading && (
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="mb-4 flex-wrap h-auto gap-1 p-1">
+                <TabsTrigger value="all" className="text-xs">
+                  All Calls <TabBadge count={filtered.length} />
+                </TabsTrigger>
+                <TabsTrigger value="today" className="text-xs">
+                  Today <TabBadge count={today.length} />
+                </TabsTrigger>
+                <TabsTrigger value="missed" className="text-xs">
+                  Missed <TabBadge count={filtered.filter(c => c.status === "missed").length} />
+                </TabsTrigger>
+                <TabsTrigger value="fu1" className="text-xs">
+                  Follow-up 1
+                  <TabBadge count={fuAll.length} overdue={fuOverdue} />
+                </TabsTrigger>
+                <TabsTrigger value="fu2" className="text-xs">
+                  Follow-up 2
+                  <TabBadge count={fu2All.length} overdue={fu2Overdue} />
+                </TabsTrigger>
+                <TabsTrigger value="fu3" className="text-xs">
+                  Follow-up 3
+                  <TabBadge count={fu3All.length} overdue={fu3Overdue} />
+                </TabsTrigger>
+              </TabsList>
+
+              {/* ALL */}
+              <TabsContent value="all">
+                <CallGrid calls={filtered} {...cardProps} emptyMessage="No calls match your filters." />
+              </TabsContent>
+
+              {/* TODAY */}
+              <TabsContent value="today">
+                <div className="mb-3 flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">
+                    Calls for {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
+                  </span>
+                </div>
+                <CallGrid calls={today} {...cardProps} emptyMessage="No calls recorded today." />
+              </TabsContent>
+
+              {/* MISSED */}
+              <TabsContent value="missed">
+                <div className="mb-3 flex items-center gap-2">
+                  <PhoneMissed className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium text-red-600">Missed Calls — require callback</span>
+                </div>
+                <CallGrid
+                  calls={filtered.filter(c => c.status === "missed")}
+                  {...cardProps}
+                  emptyMessage="No missed calls."
+                />
+              </TabsContent>
+
+              {/* FOLLOW-UP 1 */}
+              <TabsContent value="fu1">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm font-medium">Follow-up 1 — Initial follow-up dates</span>
+                  </div>
+                  {fuOverdue > 0 && (
+                    <Badge className="bg-red-100 text-red-700 border-red-200 border">
+                      {fuOverdue} overdue
+                    </Badge>
+                  )}
+                </div>
+                {/* Sort: overdue first */}
+                <CallGrid
+                  calls={[...fuAll].sort((a, b) => {
+                    const ao = isPast(a.follow_up_date) ? 0 : 1;
+                    const bo = isPast(b.follow_up_date) ? 0 : 1;
+                    return ao - bo;
+                  })}
+                  {...cardProps}
+                  emptyMessage="No calls with Follow-up 1 dates."
+                />
+              </TabsContent>
+
+              {/* FOLLOW-UP 2 */}
+              <TabsContent value="fu2">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-orange-500" />
+                    <span className="text-sm font-medium">Follow-up 2 — +1 day from Follow-up 1</span>
+                  </div>
+                  {fu2Overdue > 0 && (
+                    <Badge className="bg-red-100 text-red-700 border-red-200 border">
+                      {fu2Overdue} overdue
+                    </Badge>
+                  )}
+                </div>
+                <CallGrid
+                  calls={[...fu2All].sort((a, b) => {
+                    const ao = isPast(a.follow_up_date_2) ? 0 : 1;
+                    const bo = isPast(b.follow_up_date_2) ? 0 : 1;
+                    return ao - bo;
+                  })}
+                  {...cardProps}
+                  emptyMessage="No calls with Follow-up 2 dates."
+                />
+              </TabsContent>
+
+              {/* FOLLOW-UP 3 */}
+              <TabsContent value="fu3">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-rose-500" />
+                    <span className="text-sm font-medium">Follow-up 3 — +3 days from Follow-up 1</span>
+                  </div>
+                  {fu3Overdue > 0 && (
+                    <Badge className="bg-red-100 text-red-700 border-red-200 border">
+                      {fu3Overdue} overdue
+                    </Badge>
+                  )}
+                </div>
+                <CallGrid
+                  calls={[...fu3All].sort((a, b) => {
+                    const ao = isPast(a.follow_up_date_3) ? 0 : 1;
+                    const bo = isPast(b.follow_up_date_3) ? 0 : 1;
+                    return ao - bo;
+                  })}
+                  {...cardProps}
+                  emptyMessage="No calls with Follow-up 3 dates."
+                />
+              </TabsContent>
+            </Tabs>
           )}
         </PageShell>
       </div>
+
+      {/* ── Detail Sheet ── */}
+      <CallDetailSheet
+        call={detailCall}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        onEdit={(c) => { setDetailOpen(false); openEdit(c); }}
+        onDelete={(id) => { setDetailOpen(false); confirmDel(id); }}
+        onConvertToAppointment={(c) => setConvertApptCall(c)}
+        onConvertToTicket={(c) => setConvertTicketCall(c)}
+      />
+
+      {/* ── Form Dialog ── */}
+      <Dialog open={isFormOpen} onOpenChange={(o) => { setIsFormOpen(o); if (!o) setEditingCall(null); }}>
+        <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingCall ? "Edit Phone Call" : "New Phone Call"}</DialogTitle>
+          </DialogHeader>
+          <PhoneCallForm
+            editingCall={editingCall || undefined}
+            onSuccess={() => {
+              setIsFormOpen(false);
+              setEditingCall(null);
+              queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirm ── */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Call</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this call record? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+            >
+              {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Convert to Appointment ── */}
+      <Dialog
+        open={!!convertApptCall}
+        onOpenChange={(o) => !o && setConvertApptCall(null)}
+      >
+        <DialogContent className="sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarPlus className="h-5 w-5 text-primary" />
+              Convert to Appointment
+            </DialogTitle>
+            <DialogDescription>
+              Creating an appointment from call with{" "}
+              <strong>{convertApptCall?.caller_name}</strong>. Fields are pre-filled from the call.
+            </DialogDescription>
+          </DialogHeader>
+
+          {convertApptCall && (
+            <AppointmentForm
+              initialData={{
+                contactId:   convertApptCall.contact_id || "",
+                branchId:    convertApptCall.branch_id  || "",
+                date:        new Date().toISOString().split("T")[0],
+                time:        "09:00",
+                kind:        "Consultation" as any,
+                status:      "Pending"      as any,
+                advisor:     convertApptCall.agent_name || "",
+                bookingInfo: convertApptCall.notes      || "",
+                title:       convertApptCall.caller_name,
+                duration:    60,
+                preBookingTime: 0,
+                subServices: [],
+                serviceAdvisors: [],
+              } as any}
+              onSuccess={() => {
+                setConvertApptCall(null);
+                toast.success("Appointment created from call ✓");
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Convert to Ticket ── */}
+      <Dialog
+        open={!!convertTicketCall}
+        onOpenChange={(o) => !o && setConvertTicketCall(null)}
+      >
+        <DialogContent className="sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LifeBuoy className="h-5 w-5 text-orange-600" />
+              Convert to Support Ticket
+            </DialogTitle>
+            <DialogDescription>
+              Creating a ticket from call with{" "}
+              <strong>{convertTicketCall?.caller_name}</strong>. Fields are pre-filled from the call.
+            </DialogDescription>
+          </DialogHeader>
+
+          {convertTicketCall && (
+            <TicketForm
+              initialData={{
+                title:           convertTicketCall.notes
+                  ? convertTicketCall.notes.slice(0, 80)
+                  : `Call from ${convertTicketCall.caller_name}`,
+                branch_id:       convertTicketCall.branch_id  || "",
+                priority:        convertTicketCall.status === "missed" ? "high" : "medium",
+                category:        purposeToTicketCategory(convertTicketCall.purpose),
+                requester_name:  convertTicketCall.caller_name  || "",
+                requester_phone: convertTicketCall.caller_phone || "",
+                requester_email: "",
+                description: [
+                  `Source: Phone Call (${convertTicketCall.direction})`,
+                  `Date: ${formatDateTime(convertTicketCall.call_date)}`,
+                  `Duration: ${formatDuration(convertTicketCall.call_duration)}`,
+                  convertTicketCall.notes ? `\nNotes:\n${convertTicketCall.notes}` : "",
+                ].filter(Boolean).join("\n"),
+              }}
+              onSuccess={() => {
+                setConvertTicketCall(null);
+                toast.success("Ticket created from call ✓");
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

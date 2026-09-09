@@ -440,7 +440,7 @@ function LeadDetailPage() {
                       { label: "Interest",      value: lead.interest_level?.replace(/_/g, " ") || "—", icon: <Star className="h-3.5 w-3.5" /> },
                       { label: "Assigned To",   value: lead.assignedUser ? `${lead.assignedUser.first_name} ${lead.assignedUser.last_name}` : "Unassigned", icon: <User className="h-3.5 w-3.5" /> },
                       { label: "Last Contact",  value: formatDate(lead.last_contact_date),             icon: <Clock className="h-3.5 w-3.5" /> },
-                      { label: "Next Follow-up",value: formatDate(lead.next_follow_up),                icon: <Calendar className={cn("h-3.5 w-3.5", isOverdue && "text-red-500")} /> },
+                      { label: "Next Follow-up",value: formatDate(lead.next_follow_up),                icon: <Calendar className="h-3.5 w-3.5 " + (isOverdue ? "text-red-500" : "") /> },
                       { label: "Created",       value: formatDateTime(lead.created_at),               icon: <Hash className="h-3.5 w-3.5" /> },
                       { label: "Branch",        value: lead.branch?.name || "—",                      icon: <Building className="h-3.5 w-3.5" /> },
                     ].map((row) => (
