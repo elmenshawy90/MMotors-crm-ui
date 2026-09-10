@@ -74,6 +74,7 @@ type AppointmentType =
 interface ApiAppointment {
   id: string;
   branch_id: string;
+  company_id?: string;
   vehicle_id?: string;
   contact_id?: string;
   customer_name: string;
@@ -86,7 +87,8 @@ interface ApiAppointment {
   status: AppointmentStatus;
   notes?: string;
   advisor?: string;
-  branch?: { id: string; name: string; code: string };
+  branch?: { id: string; name: string; code: string; company?: { id: string; name: string } };
+  company?: { id: string; name: string };
   vehicle?: { id: string; make: string; model: string; year: number; license_plate: string };
   contact?: { id: string; first_name: string; last_name: string; email?: string; phone?: string };
   created_at?: string;
@@ -126,12 +128,12 @@ const typeLabel: Record<AppointmentType, string> = {
 interface ColFilters {
   date: string; time: string; customer: string;
   phone: string; vehicle: string; type: string;
-  branch: string; advisor: string; status: string;
+  branch: string; company: string; advisor: string; status: string;
 }
 
 const emptyFilters: ColFilters = {
   date: "", time: "", customer: "", phone: "",
-  vehicle: "", type: "", branch: "", advisor: "", status: "",
+  vehicle: "", type: "", branch: "", company: "", advisor: "", status: "",
 };
 
 // ─── Inline filter components ─────────────────────────────────────────────────
@@ -227,8 +229,14 @@ function AppointmentsPage() {
     queryFn: () => apiClient.getBranches(),
   });
 
+  const { data: companiesData } = useQuery({
+    queryKey: ["companies"],
+    queryFn: () => apiClient.getCompanies(),
+  });
+
   const appointments: ApiAppointment[] = appointmentsData?.data || [];
   const branches = branchesData?.data || [];
+  const companies = companiesData?.data || [];
 
   // ── Reschedule mutation ────────────────────────────────────────────────────
   const rescheduleMutation = useMutation({
@@ -289,6 +297,7 @@ function AppointmentsPage() {
       if (col.vehicle  && !lc(getVehicleName(a)).includes(lc(col.vehicle)))      return false;
       if (col.type     && a.type !== col.type)                                   return false;
       if (col.branch   && !lc(a.branch?.name).includes(lc(col.branch)))          return false;
+      if (col.company  && !lc(a.branch?.company?.name || a.company?.name).includes(lc(col.company))) return false;
       if (col.advisor  && !lc(a.advisor || "").includes(lc(col.advisor)))        return false;
       if (col.status   && a.status !== col.status)                               return false;
       return true;
@@ -298,6 +307,9 @@ function AppointmentsPage() {
   // Unique values for dynamic dropdowns
   const uniqueBranches = useMemo(() =>
     [...new Set(appointments.map((a) => a.branch?.name).filter(Boolean))] as string[],
+    [appointments]);
+  const uniqueCompanies = useMemo(() =>
+    [...new Set(appointments.map((a) => a.branch?.company?.name || a.company?.name).filter(Boolean))] as string[],
     [appointments]);
   const uniqueAdvisors = useMemo(() =>
     [...new Set(appointments.map((a) => a.advisor).filter(Boolean))] as string[],
@@ -442,6 +454,7 @@ function AppointmentsPage() {
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Vehicle</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Type</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Branch</TableHead>
+                          <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">BRAND/Company</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Advisor</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Status</TableHead>
                           <TableHead className="pt-3 pb-0 text-xs font-semibold uppercase tracking-wide">Actions</TableHead>
@@ -485,6 +498,16 @@ function AppointmentsPage() {
                               />
                             ) : (
                               <ColInput value={col.branch} onChange={setColField("branch")} placeholder="Filter…" />
+                            )}
+                          </TableHead>
+                          <TableHead className="py-1.5 px-3">
+                            {uniqueCompanies.length <= 10 ? (
+                              <ColSelect
+                                value={col.company} onChange={setColField("company")} placeholder="All"
+                                options={uniqueCompanies.map((c) => ({ value: c, label: c }))}
+                              />
+                            ) : (
+                              <ColInput value={col.company} onChange={setColField("company")} placeholder="Filter…" />
                             )}
                           </TableHead>
                           <TableHead className="py-1.5 px-3">
@@ -547,6 +570,7 @@ function AppointmentsPage() {
                             </TableCell>
                             <TableCell>{typeLabel[a.type]}</TableCell>
                             <TableCell className="text-muted-foreground">{a.branch?.name || "—"}</TableCell>
+                            <TableCell className="text-muted-foreground">{a.branch?.company?.name || a.company?.name || "—"}</TableCell>
                             <TableCell className="text-muted-foreground">{a.advisor || "—"}</TableCell>
                             <TableCell>
                               <Badge

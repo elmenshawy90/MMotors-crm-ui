@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -33,8 +33,12 @@ import {
 import { CustomerVehicle } from "@/lib/data";
 import apiClient from "@/lib/api-client";
 import { toast } from "sonner";
-import { Plus, Car as CarIcon, Clock, DollarSign, Briefcase, Loader2, UserPlus } from "lucide-react";
+import { Plus, Car as CarIcon, Clock, DollarSign, Briefcase, Loader2, UserPlus, Calendar, Search, X } from "lucide-react";
+import { VehicleForm } from "@/components/forms/VehicleForm";
 import { ContactForm } from "@/components/forms/ContactForm";
+import { DayPicker } from "react-day-picker";
+import { format, addDays, startOfWeek, endOfWeek, isSameDay } from "date-fns";
+import "react-day-picker/dist/style.css";
 
 // Define Appointment interface based on API response
 interface Appointment {
@@ -80,6 +84,7 @@ const appointmentSchema = z.object({
   cancellationReason: z.string().optional(),
   regardingCategory: z.string().optional(),
   regardingSubCategory: z.string().optional(),
+  regardingTicketId: z.string().optional(),
 });
 
 type AppointmentFormValues = z.infer<typeof appointmentSchema>;
@@ -137,12 +142,200 @@ const mapTypeToFrontend = (type: string): "Test Drive" | "Periodic Service" | "R
   return mapping[type] || "Periodic Service";
 };
 
+// ─── Searchable Ticket Select ─────────────────────────────────────────────────
+function TicketSearchSelect({
+  tickets,
+  value,
+  onChange,
+  placeholder = "Select ticket",
+}: {
+  tickets: any[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = tickets.filter((t: any) => {
+    if (!q.trim()) return true;
+    const s = q.toLowerCase();
+    return (
+      (t.title || "").toLowerCase().includes(s) ||
+      (t.id || "").toLowerCase().includes(s) ||
+      (t.category || "").toLowerCase().includes(s) ||
+      (t.status || "").toLowerCase().includes(s) ||
+      (t.requester_name || "").toLowerCase().includes(s)
+    );
+  });
+
+  const selected = tickets.find((t: any) => t.id === value);
+
+  return (
+    <Select
+      value={value}
+      onValueChange={(v) => { onChange(v); setQ(""); }}
+    >
+      <SelectTrigger className="border-gray-300">
+        <SelectValue placeholder={placeholder}>
+          {selected
+            ? `#${selected.id?.slice(-6) || selected.id} — ${selected.title || "Untitled"}`
+            : placeholder}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="p-0">
+        {/* Sticky search bar */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border sticky top-0 bg-background z-10">
+          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search title, ID, category…"
+            className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground min-w-0"
+            onKeyDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => { setQ(""); inputRef.current?.focus(); }}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Results list */}
+        <div className="max-h-56 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              No tickets found
+            </p>
+          ) : (
+            filtered.map((t: any) => (
+              <SelectItem key={t.id} value={t.id} className="py-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-sm">
+                    #{t.id?.slice(-6) || t.id}{" "}
+                    <span className="font-normal">{t.title || "Untitled"}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {[t.category, t.status, t.requester_name].filter(Boolean).join(" · ")}
+                  </span>
+                </div>
+              </SelectItem>
+            ))
+          )}
+        </div>
+      </SelectContent>
+    </Select>
+  );
+}
+
+// ─── Searchable Customer Select ───────────────────────────────────────────────
+function CustomerSearchSelect({
+  contacts,
+  value,
+  onChange,
+  placeholder = "Select customer",
+}: {
+  contacts: any[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = contacts.filter((c: any) => {
+    if (!q.trim()) return true;
+    const s = q.toLowerCase();
+    const name = `${c.first_name || ""} ${c.last_name || ""}`.toLowerCase();
+    return (
+      name.includes(s) ||
+      (c.phone  || "").toLowerCase().includes(s) ||
+      (c.mobile || "").toLowerCase().includes(s) ||
+      (c.email  || "").toLowerCase().includes(s) ||
+      (c.company|| "").toLowerCase().includes(s)
+    );
+  });
+
+  const selected = contacts.find((c: any) => c.id === value);
+
+  return (
+    <Select
+      value={value}
+      onValueChange={(v) => { onChange(v); setQ(""); }}
+    >
+      <SelectTrigger className="border-gray-300">
+        <SelectValue placeholder={placeholder}>
+          {selected
+            ? `${selected.first_name} ${selected.last_name}${selected.company ? ` (${selected.company})` : ""}`
+            : placeholder}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="p-0">
+        {/* Sticky search bar */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border sticky top-0 bg-background z-10">
+          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name, phone, email…"
+            className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground min-w-0"
+            onKeyDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => { setQ(""); inputRef.current?.focus(); }}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Results list */}
+        <div className="max-h-52 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              No contacts found
+            </p>
+          ) : (
+            filtered.map((c: any) => (
+              <SelectItem key={c.id} value={c.id} className="py-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-sm">
+                    {c.first_name} {c.last_name}
+                    {c.company && (
+                      <span className="text-muted-foreground font-normal ml-1">({c.company})</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {[c.phone, c.mobile, c.email].filter(Boolean).join(" · ")}
+                  </span>
+                </div>
+              </SelectItem>
+            ))
+          )}
+        </div>
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBranchSelect }: AppointmentFormProps) {
   const queryClient = useQueryClient();
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
+  const [showAddVehicleDialog, setShowAddVehicleDialog] = useState(false);
   const [newVehicleData, setNewVehicleData] = useState({
     modelId: "",
     vin: "",
@@ -153,6 +346,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
   });
   const [regardingCategory, setRegardingCategory] = useState("");
   const [regardingSubCategory, setRegardingSubCategory] = useState("");
+  const [calendarDate, setCalendarDate] = useState<Date | undefined>(new Date());
 
   // Initialize form
   const form = useForm<AppointmentFormValues>({
@@ -178,6 +372,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
       cancellationReason: initialData?.cancellationReason || "",
       regardingCategory: initialData?.regardingCategory || "",
       regardingSubCategory: initialData?.regardingSubCategory || "",
+      regardingTicketId: "",
     },
   });
 
@@ -548,6 +743,121 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
 
   const availableTimeSlots = generateTimeSlots();
 
+  // Get available time slots for a specific date
+  const getTimeSlotsForDate = (date: Date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const slots = [];
+
+    // Get the day of the week for the selected date
+    const dayIndex = date.getDay();
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayOfWeek = dayNames[dayIndex];
+
+    // Get employees to generate slots for
+    const employeesToProcess = selectedAdvisor
+      ? branchEmployees.filter((e: any) =>
+          `${e.first_name} ${e.last_name}`.trim() === selectedAdvisor ||
+          e.name === selectedAdvisor
+        )
+      : branchEmployees;
+
+    // Generate slots for each employee
+    employeesToProcess.forEach((employee: any) => {
+      const advisorSchedule = employee?.schedule;
+      const slotDuration = employee?.slot_duration || employee?.slotDuration || 15;
+      const employeeName = `${employee.first_name} ${employee.last_name}`.trim() || employee.name;
+
+      // Get the working hours for the selected day
+      const daySchedule = advisorSchedule?.[dayOfWeek as keyof NonNullable<typeof advisorSchedule>];
+
+      if (!daySchedule) {
+        return;
+      }
+
+      const startHour = parseInt(daySchedule.start.split(':')[0]);
+      const startMinute = parseInt(daySchedule.start.split(':')[1]);
+      const endHour = parseInt(daySchedule.end.split(':')[0]);
+      const endMinute = parseInt(daySchedule.end.split(':')[1]);
+
+      // Generate time slots based on the employee's schedule
+      let currentHour = startHour;
+      let currentMinute = startMinute;
+
+      while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
+        const startTime = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+        const newEndMinute = currentMinute + slotDuration;
+        const endHourFormatted = newEndMinute === 60 ? currentHour + 1 : currentHour;
+        const endMinuteFormatted = newEndMinute === 60 ? '00' : newEndMinute.toString().padStart(2, '0');
+        const endTime = `${endHourFormatted.toString().padStart(2, '0')}:${endMinuteFormatted}`;
+
+        const slotEndTime = new Date();
+        slotEndTime.setHours(endHourFormatted, endMinuteFormatted);
+        const workEndTime = new Date();
+        workEndTime.setHours(endHour, endMinute);
+
+        if (slotEndTime > workEndTime) {
+          break;
+        }
+
+        // Check if this slot is already booked for this employee on this date
+        const isBooked = existingAppointments.some(
+          (apt: any) => {
+            const appointmentAdvisor = apt.advisor;
+            const appointmentDate = apt.appointment_date;
+            const appointmentTime = apt.appointment_time;
+            const appointmentStatus = apt.status;
+
+            // Normalize date for comparison (extract date part from ISO format)
+            const normalizedAppointmentDate = appointmentDate ? appointmentDate.split('T')[0] : '';
+
+            // Map backend status to frontend status for comparison
+            const isCancelled = appointmentStatus === 'cancelled' || appointmentStatus === 'no_show';
+
+            return appointmentAdvisor === employeeName &&
+                   normalizedAppointmentDate === dateStr &&
+                   appointmentTime === startTime &&
+                   !isCancelled;
+          }
+        );
+
+        // Only add slot if it's available (not booked)
+        if (!isBooked) {
+          const existingSlot = slots.find(s => s.startTime === startTime);
+          if (!existingSlot) {
+            slots.push({
+              startTime,
+              endTime,
+              available: true,
+              availableAdvisors: selectedAdvisor ? [employeeName] : [employeeName]
+            });
+          } else {
+            if (!existingSlot.availableAdvisors.includes(employeeName)) {
+              existingSlot.availableAdvisors.push(employeeName);
+            }
+          }
+        }
+
+        // Move to next slot
+        currentMinute += slotDuration;
+        if (currentMinute >= 60) {
+          currentMinute = 0;
+          currentHour++;
+        }
+      }
+    });
+
+    // Sort slots by time
+    return slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  };
+
+  // Handle date selection from calendar
+  const handleDateSelect = (date: Date | undefined) => {
+    if (date) {
+      setCalendarDate(date);
+      form.setValue("date", format(date, 'yyyy-MM-dd'));
+    }
+  };
+
   const handleAddVehicle = () => {
     if (!selectedCustomer) {
       toast.error("Please select a customer first");
@@ -588,6 +898,20 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
   };
 
   function onSubmit(data: AppointmentFormValues) {
+    // Guard: customer_name and customer_phone are required by the backend
+    const customerName = data.title?.trim() ||
+      (selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`.trim() : "");
+    const customerPhone = selectedCustomer?.phone?.trim() || selectedCustomer?.mobile?.trim() || "";
+
+    if (!customerName) {
+      toast.error("Customer name is required — please select a customer");
+      return;
+    }
+    if (!customerPhone) {
+      toast.error("Customer phone is required — the selected contact has no phone number");
+      return;
+    }
+
     // Transform form data to backend format
     const appointmentPayload = {
       company_id: data.companyId || null,
@@ -599,14 +923,16 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
       appointment_date: data.date,
       appointment_time: data.time,
       duration_minutes: data.duration || 60,
-      notes: data.bookingInfo || "",
+      notes: data.bookingInfo || null,
       advisor: data.advisor,
-      customer_name: data.title || "",
-      customer_phone: selectedCustomer?.phone || "",
-      customer_email: selectedCustomer?.email || "",
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      // send null for email if empty — backend isEmail validator rejects ""
+      customer_email: selectedCustomer?.email?.trim() || null,
       cancellation_reason: data.cancellationReason || null,
       regarding_category: data.regardingCategory || null,
       regarding_sub_category: data.regardingSubCategory || null,
+      regarding_ticket_id: data.regardingTicketId || null,
     };
 
     if (initialData) {
@@ -661,20 +987,11 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Customer</FormLabel>
                   <div className="flex gap-1.5">
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="border-gray-300">
-                          <SelectValue placeholder="Select customer" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {contactsData?.map((c: any) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.first_name} {c.last_name} {c.company && `(${c.company})`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CustomerSearchSelect
+                      contacts={contactsData || []}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
                     {/* ── Add new contact button ── */}
                     <Button
                       type="button"
@@ -731,7 +1048,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Service Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select" />
@@ -756,18 +1073,19 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Brand / Company</FormLabel>
                   <Select onValueChange={(value) => {
-                    field.onChange(value);
-                    setSelectedCompanyId(value);
-                    form.setValue("branchId", "");
+                    const realValue = value === "__all__" ? "" : value;
+                    field.onChange(realValue);
+                    setSelectedCompanyId(realValue);
+                    form.setValue("branchId", "", { shouldValidate: false });
                     setSelectedBranchId("");
-                  }} defaultValue={field.value}>
+                  }} value={field.value || "__all__"}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select brand" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">All Brands</SelectItem>
+                      <SelectItem value="__all__">All Brands</SelectItem>
                       {companiesData?.map((c: any) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}
@@ -785,7 +1103,11 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Branch</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    key={selectedCompanyId}
+                    onValueChange={field.onChange}
+                    value={field.value || ""}
+                  >
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select" />
@@ -842,7 +1164,8 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                     setRegardingCategory(value);
                     setRegardingSubCategory("");
                     form.setValue("regardingSubCategory", "");
-                  }} defaultValue={field.value}>
+                    form.setValue("regardingTicketId", "");
+                  }} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select category" />
@@ -865,30 +1188,58 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
               name="regardingSubCategory"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs text-gray-600">Sub Category</FormLabel>
-                  <Select onValueChange={(value) => {
-                    field.onChange(value);
-                    setRegardingSubCategory(value);
-                  }} defaultValue={field.value} disabled={!regardingCategory}>
-                    <FormControl>
-                      <SelectTrigger className="border-gray-300">
-                        <SelectValue placeholder={regardingCategory ? "Select sub category" : "Select category first"} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {subCategories.length > 0 ? (
-                        subCategories.map((sub) => (
-                          <SelectItem key={sub.value} value={sub.value}>
-                            {sub.label}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <div className="p-2 text-center text-xs text-muted-foreground">
-                          No sub categories available
-                        </div>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel className="text-xs text-gray-600">
+                    {regardingCategory === "ticket" ? "Select Ticket" : "Sub Category"}
+                  </FormLabel>
+
+                  {regardingCategory === "ticket" ? (
+                    // ── Ticket picker ──
+                    <TicketSearchSelect
+                      tickets={tickets}
+                      value={form.watch("regardingTicketId") || ""}
+                      onChange={(id) => {
+                        form.setValue("regardingTicketId", id);
+                        // also store the ticket id as subCategory so the payload carries it
+                        field.onChange(id);
+                        setRegardingSubCategory(id);
+                      }}
+                      placeholder="Search and select a ticket…"
+                    />
+                  ) : (
+                    // ── Normal sub-category dropdown ──
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        setRegardingSubCategory(value);
+                      }}
+                      value={field.value}
+                      disabled={!regardingCategory}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="border-gray-300">
+                          <SelectValue
+                            placeholder={
+                              regardingCategory ? "Select sub category" : "Select category first"
+                            }
+                          />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {subCategories.length > 0 ? (
+                          subCategories.map((sub) => (
+                            <SelectItem key={sub.value} value={sub.value}>
+                              {sub.label}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-2 text-center text-xs text-muted-foreground">
+                            No sub categories available
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+
                   <FormMessage />
                 </FormItem>
               )}
@@ -963,7 +1314,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
               render={({ field}) => (
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Time</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select time" />
@@ -1011,23 +1362,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  const newVehicle: CustomerVehicle = {
-                    id: `cv${Date.now()}`,
-                    modelId: "v1",
-                    vin: "",
-                    licensePlate: "",
-                    purchaseDate: new Date().toISOString().split("T")[0],
-                    warrantyExpiry: "",
-                    mileage: 0,
-                  };
-                  if (selectedCustomer.customerVehicles) {
-                    selectedCustomer.customerVehicles.push(newVehicle);
-                  } else {
-                    selectedCustomer.customerVehicles = [newVehicle];
-                  }
-                  toast.success("New vehicle added to customer");
-                }}
+                onClick={() => setShowAddVehicleDialog(true)}
                 className="text-xs"
               >
                 <Plus className="w-3 h-3 mr-1" />
@@ -1055,7 +1390,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                       form.setValue("chassisNumber", vehicle.vin || vehicle.chassis_number || "");
                       form.setValue("licensePlate", vehicle.license_plate || vehicle.licensePlate || "");
                     }
-                  }} defaultValue={field.value}>
+                  }} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select vehicle" />
@@ -1134,7 +1469,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs text-gray-600">Primary Advisor</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger className="border-gray-300">
                       <SelectValue placeholder="Select advisor" />
@@ -1284,7 +1619,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-gray-600">Status</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="border-gray-300">
                         <SelectValue placeholder="Select" />
@@ -1462,7 +1797,7 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                   </div>
                 )}
               </div>
-                
+
               {/* Available Time Slots */}
               {selectedAdvisor && (
                 <div className="mt-3">
@@ -1501,6 +1836,130 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Calendar View */}
+            <div className="p-3 bg-white rounded-lg border border-gray-200">
+              <h4 className="font-medium mb-3 text-sm text-gray-900 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Available Slots Calendar
+              </h4>
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <DayPicker
+                    mode="single"
+                    selected={calendarDate}
+                    onSelect={handleDateSelect}
+                    disabled={{ before: new Date() }}
+                    className="rounded-md border"
+                    modifiers={{
+                      available: (date) => {
+                        if (!selectedBranchId) return false;
+                        const slots = getTimeSlotsForDate(date);
+                        return slots.length > 0;
+                      }
+                    }}
+                    modifiersStyles={{
+                      available: {
+                        backgroundColor: '#22c55e',
+                        color: 'white',
+                        fontWeight: 'bold'
+                      }
+                    }}
+                  />
+                </div>
+
+                {calendarDate && (
+                  <div className="mt-4">
+                    <h5 className="text-sm font-medium text-gray-900 mb-2">
+                      Available slots for {format(calendarDate, 'MMMM d, yyyy')}:
+                    </h5>
+                    {selectedBranchId ? (
+                      (() => {
+                        const slots = getTimeSlotsForDate(calendarDate);
+                        if (slots.length === 0) {
+                          return (
+                            <div className="text-center py-4 text-xs text-gray-500">
+                              No available slots for this date
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="space-y-2">
+                            {slots.map((slot: any, index: number) => (
+                              <div
+                                key={index}
+                                className="border border-gray-200 rounded overflow-hidden"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    form.setValue("time", slot.startTime);
+                                    form.setValue("date", format(calendarDate, 'yyyy-MM-dd'));
+                                    // Select random advisor from available advisors
+                                    if (slot.availableAdvisors && slot.availableAdvisors.length > 0) {
+                                      const randomAdvisor = slot.availableAdvisors[Math.floor(Math.random() * slot.availableAdvisors.length)];
+                                      form.setValue("advisor", randomAdvisor);
+                                    }
+                                  }}
+                                  className={`w-full p-2 text-left transition-colors ${
+                                    form.watch("time") === slot.startTime &&
+                                    form.watch("date") === format(calendarDate, 'yyyy-MM-dd')
+                                      ? "bg-primary text-white"
+                                      : "bg-gray-50 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="w-3 h-3" />
+                                    <span className="font-medium">{slot.startTime}</span>
+                                    {slot.endTime && (
+                                      <span className="text-gray-500">- {slot.endTime}</span>
+                                    )}
+                                  </div>
+                                </button>
+                                {!selectedAdvisor && slot.availableAdvisors && slot.availableAdvisors.length > 0 && (
+                                  <div className={`p-2 border-t ${
+                                    form.watch("time") === slot.startTime &&
+                                    form.watch("date") === format(calendarDate, 'yyyy-MM-dd')
+                                      ? "bg-primary/90"
+                                      : "bg-white"
+                                  }`}>
+                                    <div className="text-xs">
+                                      <p className="font-medium mb-1">Available advisors:</p>
+                                      <div className="space-y-1">
+                                        {slot.availableAdvisors.map((advisorName: string, advisorIndex: number) => (
+                                          <div
+                                            key={advisorIndex}
+                                            className={`flex items-center gap-2 p-1 rounded ${
+                                              form.watch("advisor") === advisorName
+                                                ? "bg-green-100 text-green-700"
+                                                : "bg-gray-50"
+                                            }`}
+                                          >
+                                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                            <span>{advisorName}</span>
+                                            {form.watch("advisor") === advisorName && (
+                                              <span className="ml-auto text-xs bg-green-600 text-white px-1 rounded">Auto-selected</span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-center py-4 text-xs text-gray-500">
+                        Select a branch to view available slots
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
             
@@ -1763,6 +2222,36 @@ export function AppointmentForm({ initialData, onSuccess, onCustomerSelect, onBr
           </Button>
         </div>
       </form>
+
+      {/* ── Add Vehicle Dialog ── */}
+      <Dialog open={showAddVehicleDialog} onOpenChange={setShowAddVehicleDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CarIcon className="h-5 w-5 text-primary" />
+              Add Vehicle
+            </DialogTitle>
+            <DialogDescription>
+              Adding a new vehicle for{" "}
+              {selectedCustomer
+                ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
+                : "selected customer"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedCustomer && (
+            <VehicleForm
+              prefillContactId={selectedCustomer.id}
+              onSuccess={() => {
+                setShowAddVehicleDialog(false);
+                // Refresh vehicles list for this customer
+                queryClient.invalidateQueries({ queryKey: ['vehicles', selectedCustomerId] });
+                toast.success("Vehicle added successfully");
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Add New Customer Dialog ── */}
       <Dialog open={showNewContactDialog} onOpenChange={setShowNewContactDialog}>

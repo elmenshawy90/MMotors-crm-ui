@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 const contactSchema = z.object({
   first_name: z.string().min(2, "First name must be at least 2 characters"),
   last_name: z.string().min(2, "Last name must be at least 2 characters"),
-  email: z.string().email("Invalid email address").optional().or(z.literal("")),
+  email: z.string().email("Invalid email address").optional().or(z.literal("")).or(z.undefined()),
   phone: z.string().min(5, "Phone number is too short"),
   mobile: z.string().optional(),
   type: z.enum(["Individual", "Company", "Fleet"]),
@@ -78,13 +78,16 @@ export function ContactForm({ initialData, onSuccess }: ContactFormProps) {
 
   async function onSubmit(data: ContactFormValues) {
     try {
+      // Send null for empty email so backend doesn't treat it as required
+      const payload = {
+        ...data,
+        email: data.email?.trim() || null,
+      };
       if (initialData) {
-        // Edit mode
-        await apiClient.updateContact(initialData.id, data);
+        await apiClient.updateContact(initialData.id, payload);
         toast.success("Contact updated successfully");
       } else {
-        // Add mode
-        await apiClient.createContact(data);
+        await apiClient.createContact(payload);
         toast.success("Contact created successfully");
       }
       onSuccess();

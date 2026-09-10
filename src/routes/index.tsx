@@ -62,11 +62,11 @@ const apps = [
   { label: "Contacts",     to: "/contacts",     icon: Users,         image: "/Contact.png",      live: true },
   { label: "Helpdesk",     to: "/helpdesk",     icon: LifeBuoy,      image: "/helpDesks.png",    live: true },
   { label: "Vehicles",     to: "/vehicles",     icon: Car,           image: "/cars.png",         live: true },
-  { label: "Phone Calls",  to: "/phonecalls",   icon: PhoneCall,   image: null,                live: true },
+  { label: "Phone Calls",  to: "/phonecalls",   icon: PhoneCall,   image: "/phone-call.webp",                live: true },
   { label: "Sales & Leads", to: "/sales",       icon: TrendingUp,  image: "/role.png",        live: true },
   { label: "Branches",     to: "/branches",     icon: Building2,   image: "/branches.png",     live: true },
   { label: "Knowledge",    to: "/knowledge",    icon: BookOpen,      image: "/Knowledge.png",    live: true },
-  { label: "Settings",     to: "/settings",     icon: Settings,      image: "/Settings.webp",    live: true },
+  { label: "Settings",     to: "/settings",     icon: Settings,      image: "/setting.png",    live: true },
   { label: "Roles",        to: "/roles",        icon: Shield,        image: "/role.png",         live: true },
   { label: "System Status",to: "/system",       icon: Activity,      image: null,                live: true },
 ] as const;

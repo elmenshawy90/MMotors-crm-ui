@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
-const API_BASE_URL = (import.meta.env as any).VITE_API_BASE_URL || 'https://api.al-brisha.com/api';
+const API_BASE_URL = (import.meta.env as any).VITE_API_BASE_URL || 'https://crm-api.modernmotorseg.com/api';
+const API_KEY = (import.meta.env as any).VITE_API_KEY || '';
 
 class ApiClient {
   private client: AxiosInstance;
@@ -25,6 +26,10 @@ class ApiClient {
         const token = this.getToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
+        }
+        // أضف الـ API Key لكل الطلبات
+        if (API_KEY) {
+          config.headers['X-API-Key'] = API_KEY;
         }
         return config;
       },
@@ -626,10 +631,22 @@ class ApiClient {
   async uploadKnowledgeFile(file: File) {
     const form = new FormData();
     form.append('file', file);
-    const response = await this.client.post('/upload/knowledge', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (API_KEY) headers['X-API-Key'] = API_KEY;
+    const res = await fetch(`${API_BASE_URL}/upload/knowledge`, {
+      method: 'POST',
+      headers,
+      body: form,
+      // Do NOT set Content-Type — browser sets multipart/form-data + boundary automatically
     });
-    return response.data.data as { url: string; filename: string; size: number; mimetype: string };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw { response: { data: err, status: res.status } };
+    }
+    const json = await res.json();
+    return json.data as { url: string; filename: string; size: number; mimetype: string };
   }
   async getLeads(filters?: any) {
     const response = await this.client.get('/leads', { params: filters });

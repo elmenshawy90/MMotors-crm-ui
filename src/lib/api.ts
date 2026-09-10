@@ -1,4 +1,5 @@
-const API_BASE_URL = (import.meta.env as any)['VITE_API_URL'] || 'https://api.al-brisha.com/api';
+const API_BASE_URL = (import.meta.env as any)['VITE_API_BASE_URL'] || (import.meta.env as any)['VITE_API_URL'] || 'https://crm-api.modernmotorseg.com/api';
+const API_KEY = (import.meta.env as any)['VITE_API_KEY'] || '';
 
 // Helper function for API calls
 async function apiCall(endpoint: string, options: RequestInit = {}) {
@@ -10,6 +11,11 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // أضف الـ API Key لكل الطلبات
+  if (API_KEY) {
+    headers['X-API-Key'] = API_KEY;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {

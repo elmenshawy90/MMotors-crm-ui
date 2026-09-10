@@ -961,18 +961,20 @@ function PhoneCallsPage() {
 
       {/* ── Form Dialog ── */}
       <Dialog open={isFormOpen} onOpenChange={(o) => { setIsFormOpen(o); if (!o) setEditingCall(null); }}>
-        <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[960px] w-[95vw] max-h-[92vh] overflow-y-auto p-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-border sticky top-0 bg-background z-10">
             <DialogTitle>{editingCall ? "Edit Phone Call" : "New Phone Call"}</DialogTitle>
           </DialogHeader>
-          <PhoneCallForm
-            editingCall={editingCall || undefined}
-            onSuccess={() => {
-              setIsFormOpen(false);
-              setEditingCall(null);
-              queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
-            }}
-          />
+          <div className="px-6 py-4">
+            <PhoneCallForm
+              editingCall={editingCall || undefined}
+              onSuccess={() => {
+                setIsFormOpen(false);
+                setEditingCall(null);
+                queryClient.invalidateQueries({ queryKey: ["phone-calls"] });
+              }}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

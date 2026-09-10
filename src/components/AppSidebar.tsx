@@ -29,7 +29,7 @@ const navItems = [
   { to: "/phonecalls",  icon: Phone,    image: null,                label: "Phone Calls", pageKey: "phonecalls"   },
   { to: "/sales",       icon: null,     image: "/carss.png",        label: "Sales & Leads", pageKey: "sales"      },
   { to: "/knowledge",   icon: BookOpen, image: null,                label: "Knowledge",   pageKey: "knowledge"    },
-  { to: "/settings-api",icon: null,     image: "/Settings.webp",    label: "Settings",    pageKey: "settings"     },
+  { to: "/settings-api",icon: null,     image: "/setting.png",    label: "Settings",    pageKey: "settings"     },
   { to: "/system",      icon: Activity, image: null,                label: "System Status", pageKey: "system"     },
   // Coming-soon items — always shown but disabled
   { to: "/",            icon: Wrench,   image: null,  label: "Workshop",  disabled: true },

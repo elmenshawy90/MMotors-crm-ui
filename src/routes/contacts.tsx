@@ -39,6 +39,8 @@ import {
   UserPlus,
   CheckCheck,
   X,
+  Filter,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import { PageShell } from "@/components/AppTopbar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -66,6 +68,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import * as XLSX from 'xlsx';
+import { format, startOfYear, endOfYear, subYears, addYears } from 'date-fns';
 
 export const Route = createFileRoute("/contacts")({
   head: () => ({
@@ -116,6 +120,13 @@ function ContactsPage() {
   const [branch, setBranch] = useState("all");
   const [type, setType] = useState("all");
   const [sortBy, setSortBy] = useState("name");
+  const [dateRange, setDateRange] = useState("all"); // all, this_month, this_year, last_month, last_year, custom
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [city, setCity] = useState("all");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -143,13 +154,30 @@ function ContactsPage() {
     error: contactsRawError,
     refetch,
   } = useQuery({
-    queryKey: ["contacts", { branch_id: branch, type, search: debouncedQ, sort_by: sortBy }],
+    queryKey: ["contacts", { 
+      branch_id: branch, 
+      type, 
+      search: debouncedQ, 
+      sort_by: sortBy,
+      date_range: dateRange,
+      custom_start_date: customStartDate,
+      custom_end_date: customEndDate,
+      year: yearFilter,
+      status,
+      city
+    }],
     queryFn: () =>
       apiClient.getContacts({
         branch_id: branch !== "all" ? branch : undefined,
         type: type !== "all" ? type : undefined,
         search: debouncedQ || undefined,
         sort_by: sortBy,
+        date_range: dateRange !== "all" ? dateRange : undefined,
+        custom_start_date: dateRange === "custom" ? customStartDate : undefined,
+        custom_end_date: dateRange === "custom" ? customEndDate : undefined,
+        year: yearFilter !== "all" ? yearFilter : undefined,
+        status: status !== "all" ? status : undefined,
+        city: city !== "all" ? city : undefined,
       }),
     staleTime: 30_000,
     retry: 1,
@@ -232,23 +260,90 @@ function ContactsPage() {
       if (branch !== "all") params.branch_id = branch;
       if (type !== "all") params.type = type;
       if (q.trim()) params.search = q.trim();
+      if (dateRange !== "all") params.date_range = dateRange;
+      if (dateRange === "custom") {
+        params.custom_start_date = customStartDate;
+        params.custom_end_date = customEndDate;
+      }
+      if (yearFilter !== "all") params.year = yearFilter;
+      if (status !== "all") params.status = status;
+      if (city !== "all") params.city = city;
 
-      const response = await apiClient.exportContacts(params);
-      const blob = new Blob([response.data], { type: "text/csv" });
+      const response = await apiClient.getContacts(params);
+      const contactsToExport = ids && ids.length > 0 
+        ? (Array.isArray(response) ? response : response.data).filter((c: any) => ids.includes(c.id))
+        : (Array.isArray(response) ? response : response.data);
+
+      // Create Excel workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Define worksheet data
+      const worksheetData = contactsToExport.map((c: any) => ({
+        'ID': c.id,
+        'First Name': c.first_name || '',
+        'Last Name': c.last_name || '',
+        'Full Name': `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        'Company Name': c.company_name || '',
+        'Type': c.type || c.contact_type || '',
+        'Email': c.email || '',
+        'Phone': c.phone || '',
+        'Mobile': c.mobile || '',
+        'Branch': c.branch?.name || '',
+        'City': c.city || '',
+        'Address': c.address || '',
+        'Credit Limit': c.credit_limit || 0,
+        'Status': c.status || 'active',
+        'Tags': Array.isArray(c.tags) ? c.tags.join(', ') : '',
+        'Created At': c.created_at ? new Date(c.created_at).toLocaleDateString() : '',
+        'Updated At': c.updated_at ? new Date(c.updated_at).toLocaleDateString() : '',
+      }));
+
+      // Create worksheet
+      const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 10 }, // ID
+        { wch: 15 }, // First Name
+        { wch: 15 }, // Last Name
+        { wch: 25 }, // Full Name
+        { wch: 20 }, // Company Name
+        { wch: 10 }, // Type
+        { wch: 25 }, // Email
+        { wch: 15 }, // Phone
+        { wch: 15 }, // Mobile
+        { wch: 20 }, // Branch
+        { wch: 15 }, // City
+        { wch: 30 }, // Address
+        { wch: 12 }, // Credit Limit
+        { wch: 10 }, // Status
+        { wch: 30 }, // Tags
+        { wch: 12 }, // Created At
+        { wch: 12 }, // Updated At
+      ];
+      worksheet['!cols'] = colWidths;
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
+
+      // Generate Excel file
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `contacts-${new Date().toISOString().split("T")[0]}.csv`;
+      a.download = `contacts-${new Date().toISOString().split("T")[0]}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Exported ${ids ? ids.length : "all"} contacts to CSV`);
+      toast.success(`Exported ${ids ? ids.length : "all"} contacts to Excel`);
       if (ids) {
         setSelectedIds(new Set());
         setIsBulkMode(false);
       }
-    } catch {
+    } catch (error) {
+      console.error('Export error:', error);
       toast.error("Export failed");
     } finally {
       setExportingAll(false);
@@ -289,7 +384,7 @@ function ContactsPage() {
   };
 
   const handleScheduleAppointment = (c: any) => {
-    navigate({ to: "/appointments/create", search: { contactId: c.id } as any });
+    navigate({ to: "/appointments/create", search: { contactId: c.id } });
   };
 
   return (
@@ -381,6 +476,125 @@ function ContactsPage() {
                   <SelectItem value="appointments">Most Active</SelectItem>
                 </SelectContent>
               </Select>
+              
+              {/* Advanced Filters Toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className={cn(
+                  "hover-lift",
+                  showAdvancedFilters && "bg-primary text-primary-foreground"
+                )}
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                Advanced Filters
+              </Button>
+
+              {/* Advanced Filters Panel */}
+              {showAdvancedFilters && (
+                <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border border-border/40">
+                  {/* Date Range Filter */}
+                  <Select value={dateRange} onValueChange={setDateRange}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Date Range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="this_month">This Month</SelectItem>
+                      <SelectItem value="last_month">Last Month</SelectItem>
+                      <SelectItem value="this_year">This Year</SelectItem>
+                      <SelectItem value="last_year">Last Year</SelectItem>
+                      <SelectItem value="custom">Custom Range</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Custom Date Range */}
+                  {dateRange === "custom" && (
+                    <>
+                      <Input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        className="w-[140px]"
+                        placeholder="Start Date"
+                      />
+                      <Input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        className="w-[140px]"
+                        placeholder="End Date"
+                      />
+                    </>
+                  )}
+
+                  {/* Year Filter */}
+                  <Select value={yearFilter} onValueChange={setYearFilter}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                      <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                      <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                      <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      <SelectItem value={(new Date().getFullYear() - 4).toString()}>{new Date().getFullYear() - 4}</SelectItem>
+                      <SelectItem value={(new Date().getFullYear() - 5).toString()}>{new Date().getFullYear() - 5}</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Status Filter */}
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* City Filter */}
+                  <Select value={city} onValueChange={setCity}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="City" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Cities</SelectItem>
+                      <SelectItem value="Cairo">Cairo</SelectItem>
+                      <SelectItem value="Alexandria">Alexandria</SelectItem>
+                      <SelectItem value="Giza">Giza</SelectItem>
+                      <SelectItem value="Mansoura">Mansoura</SelectItem>
+                      <SelectItem value="Tanta">Tanta</SelectItem>
+                      <SelectItem value="Ismailia">Ismailia</SelectItem>
+                      <SelectItem value="Asyut">Asyut</SelectItem>
+                      <SelectItem value="Luxor">Luxor</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Clear Advanced Filters */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDateRange("all");
+                      setCustomStartDate("");
+                      setCustomEndDate("");
+                      setYearFilter("all");
+                      setStatus("all");
+                      setCity("all");
+                    }}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Clear
+                  </Button>
+                </div>
+              )}
+
               <Button
                 variant="outline"
                 size="icon"
@@ -417,9 +631,9 @@ function ContactsPage() {
                 {exportingAll ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <Download className="mr-2 h-4 w-4" />
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
                 )}
-                Export All
+                Export Excel
               </Button>
 
               {/* Add Contact */}
@@ -476,7 +690,7 @@ function ContactsPage() {
                   onClick={() => handleExport(Array.from(selectedIds))}
                   className="hover-lift"
                 >
-                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Selected
+                  <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Selected (Excel)
                 </Button>
                 <Button
                   variant="destructive"

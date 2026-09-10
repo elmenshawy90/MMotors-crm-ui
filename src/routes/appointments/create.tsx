@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { PageShell } from "@/components/AppTopbar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,9 @@ import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 
 export const Route = createFileRoute("/appointments/create")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    contactId: (search.contactId as string) || "",
+  }),
   head: () => ({
     meta: [
       { title: "Create Appointment — SIG" },
@@ -44,7 +47,8 @@ export const Route = createFileRoute("/appointments/create")({
 });
 
 function CreateAppointmentPage() {
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const { contactId } = useSearch({ from: "/appointments/create" });
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>(contactId || "");
   const [selectedBranchId, setSelectedBranchId] = useState<string>("");
 
   // Fetch contacts (customers)
@@ -153,8 +157,9 @@ function CreateAppointmentPage() {
                   </div>
                 </div>
                 <AppointmentForm
+                  initialData={contactId ? { contactId } : undefined}
                   onSuccess={() => window.history.back()}
-                  onCustomerSelect={setSelectedCustomerId}
+                  onCustomerSelect={(id) => setSelectedCustomerId(id)}
                   onBranchSelect={setSelectedBranchId}
                 />
               </CardContent>

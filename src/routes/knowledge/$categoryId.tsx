@@ -23,7 +23,7 @@ import {
   Link as LinkIcon, BookOpen, HelpCircle, Video, File, StickyNote,
   ChevronRight, Eye, Folder, FolderOpen, Upload, Download,
   FileWarning, Table as TableIcon, RowsIcon, Columns, X,
-  PlusSquare, Trash, AlertCircle,
+  PlusSquare, Trash, AlertCircle, ExternalLink, ZoomIn,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 
@@ -224,14 +224,14 @@ function FileUploadZone({
         <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm">
           <File className="h-4 w-4 text-orange-600 shrink-0" />
           <a
-            href={existingUrl}
+            href={resolveFileUrl(existingUrl)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 text-orange-700 hover:underline truncate text-xs font-medium"
           >
             {existingName || existingUrl.split("/").pop()}
           </a>
-          <a href={existingUrl} download className="text-orange-600 hover:text-orange-800">
+          <a href={resolveFileUrl(existingUrl)} download className="text-orange-600 hover:text-orange-800">
             <Download className="h-3.5 w-3.5" />
           </a>
         </div>
@@ -649,6 +649,289 @@ function TableRenderer({ table }: { table: TableData }) {
   );
 }
 
+// ─── API base URL helper ──────────────────────────────────────────────────────
+const API_BASE = (import.meta.env as any).VITE_API_BASE_URL?.replace(/\/api$/, "") || "https://crm-api.modernmotorseg.com";
+
+function resolveFileUrl(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  return `${API_BASE}${url}`;
+}
+
+type FileType = "image" | "pdf" | "video" | "audio" | "office" | "text" | "other";
+
+function getFileType(filename: string): FileType {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (["mp4", "webm", "ogg", "mov"].includes(ext)) return "video";
+  if (["mp3", "wav", "aac"].includes(ext)) return "audio";
+  if (["xls", "xlsx", "doc", "docx", "ppt", "pptx", "csv"].includes(ext)) return "office";
+  if (["txt", "md", "json", "xml", "html", "css", "js", "ts"].includes(ext)) return "text";
+  return "other";
+}
+
+// ─── File Preview Modal ───────────────────────────────────────────────────────
+function FilePreviewModal({
+  open, onClose, fileUrl, fileName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fileUrl: string;
+  fileName: string;
+}) {
+  const fileType = getFileType(fileName);
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col p-0 gap-0">
+        {/* Header */}
+        <DialogHeader className="flex flex-row items-center justify-between px-4 py-3 border-b shrink-0">
+          <DialogTitle className="text-sm font-semibold truncate max-w-[calc(100%-10rem)] flex items-center gap-2">
+            <File className="w-4 h-4 text-orange-500 shrink-0" />
+            {fileName}
+          </DialogTitle>
+          <div className="flex items-center gap-2">
+            <a
+              href={fileUrl}
+              download={fileName}
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              تحميل
+            </a>
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              فتح
+            </a>
+          </div>
+        </DialogHeader>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto min-h-0 bg-muted/30">
+          {fileType === "image" && (
+            <div className="flex items-center justify-center p-4 min-h-[60vh]">
+              <img
+                src={fileUrl}
+                alt={fileName}
+                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow"
+              />
+            </div>
+          )}
+
+          {fileType === "pdf" && (
+            <iframe
+              src={`${fileUrl}#toolbar=1&navpanes=0`}
+              className="w-full min-h-[75vh]"
+              title={fileName}
+            />
+          )}
+
+          {fileType === "video" && (
+            <div className="flex items-center justify-center p-4 min-h-[60vh]">
+              <video src={fileUrl} controls className="max-w-full max-h-[75vh] rounded-lg shadow" />
+            </div>
+          )}
+
+          {fileType === "audio" && (
+            <div className="flex items-center justify-center p-8 min-h-[20vh]">
+              <audio src={fileUrl} controls className="w-full max-w-md" />
+            </div>
+          )}
+
+          {(fileType === "office" || fileType === "other" || fileType === "text") && (
+            <div className="flex flex-col items-center justify-center gap-4 p-8 min-h-[40vh] text-center">
+              <File className="w-16 h-16 text-orange-400" />
+              <p className="text-sm text-muted-foreground">
+                لا يمكن عرض هذا النوع من الملفات مباشرة في المتصفح.
+              </p>
+              <a
+                href={fileUrl}
+                download={fileName}
+                className="inline-flex items-center gap-2 rounded-lg bg-orange-500 text-white px-4 py-2 text-sm font-medium hover:bg-orange-600 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                تحميل الملف
+              </a>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+// ─── Item Card (with expand/collapse) ─────────────────────────────────────────
+function ItemCard({
+  item, ItemIcon, tables, onEdit, onDelete,
+}: {
+  item: any;
+  ItemIcon: any;
+  tables: TableData[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const fileUrl = resolveFileUrl(item.meta?.file_url || "");
+  const fileName = item.meta?.file_name || "file";
+  const hasLongContent = (item.content || "").length > 200 || tables.length > 0 || fileUrl;
+
+  return (
+    <Card className="glass-card hover-lift group transition-all">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <div className={cn(
+            "w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 mt-0.5",
+            TYPE_COLORS[item.item_type] || "bg-gray-50 text-gray-600 border-gray-200"
+          )}>
+            <ItemIcon className="w-4 h-4" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            {/* Header row */}
+            <div className="flex items-start justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => hasLongContent && setExpanded(!expanded)}
+                className={cn(
+                  "flex-1 text-left font-semibold text-sm leading-tight",
+                  hasLongContent && "hover:text-primary cursor-pointer"
+                )}
+              >
+                {item.title}
+                {hasLongContent && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    {expanded ? "▲ collapse" : "▼ expand"}
+                  </span>
+                )}
+              </button>
+              <div className="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={onEdit}
+                  className="p-1.5 rounded hover:bg-blue-100 text-muted-foreground hover:text-blue-600"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={onDelete}
+                  className="p-1.5 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content — always show first 200 chars, expand for rest */}
+            {item.content && (
+              <p className={cn(
+                "text-xs text-muted-foreground mt-1 whitespace-pre-wrap",
+                !expanded && "line-clamp-3"
+              )}>
+                {item.content}
+              </p>
+            )}
+
+            {/* Tables — only when expanded */}
+            {expanded && tables.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {tables.map((tbl, ti) => (
+                  <div key={ti}>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-1">
+                      <TableIcon className="h-3 w-3" /> Table {ti + 1}
+                    </p>
+                    <TableRenderer table={tbl} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* File attachment */}
+            {fileUrl && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                {/* View button */}
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-700 hover:bg-orange-100 transition-colors"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  {fileName}
+                  <ZoomIn className="h-3.5 w-3.5 ml-1" />
+                </button>
+                {/* Download button */}
+                <a
+                  href={fileUrl}
+                  download={fileName}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  تحميل
+                </a>
+              </div>
+            )}
+
+            {/* File preview modal */}
+            {fileUrl && (
+              <FilePreviewModal
+                open={previewOpen}
+                onClose={() => setPreviewOpen(false)}
+                fileUrl={fileUrl}
+                fileName={fileName}
+              />
+            )}
+
+            {/* Badges row */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <Badge variant="outline" className={cn("text-xs capitalize", TYPE_COLORS[item.item_type] || "")}>
+                {item.item_type}
+              </Badge>
+              {tables.length > 0 && (
+                <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
+                  <TableIcon className="h-2.5 w-2.5 mr-1" />
+                  {tables.length} table{tables.length > 1 ? "s" : ""}
+                </Badge>
+              )}
+              {fileUrl && (
+                <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
+                  <File className="h-2.5 w-2.5 mr-1" /> Attachment
+                </Badge>
+              )}
+              {item.tags?.map((tag: string) => (
+                <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+              ))}
+              {!item.is_published && (
+                <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">Draft</Badge>
+              )}
+              {item.view_count > 0 && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
+                  <Eye className="w-3 h-3" /> {item.view_count}
+                </span>
+              )}
+            </div>
+
+            {item.meta?.url && (
+              <a
+                href={item.meta.url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline mt-1 flex items-center gap-1"
+              >
+                <LinkIcon className="w-3 h-3" />
+                {item.meta.url}
+              </a>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 function KnowledgeCategoryPage() {
   const { categoryId } = Route.useParams();
@@ -841,111 +1124,14 @@ function KnowledgeCategoryPage() {
                       const ItemIcon = TYPE_ICONS[item.item_type] || FileText;
                       const tables: TableData[] = item.meta?.tables || [];
                       return (
-                        <Card key={item.id} className="glass-card hover-lift group transition-all">
-                          <CardContent className="p-4">
-                            <div className="flex items-start gap-3">
-                              <div className={cn(
-                                "w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 mt-0.5",
-                                TYPE_COLORS[item.item_type] || "bg-gray-50 text-gray-600 border-gray-200"
-                              )}>
-                                <ItemIcon className="w-4 h-4" />
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-2">
-                                  <h4 className="font-semibold text-sm leading-tight">{item.title}</h4>
-                                  <div className="hidden group-hover:flex items-center gap-1 flex-shrink-0">
-                                    <button
-                                      onClick={() => { setEditingItem(item); setItemDialog(true); }}
-                                      className="p-1.5 rounded hover:bg-blue-100 text-muted-foreground hover:text-blue-600"
-                                    >
-                                      <Edit className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => setDeleteConfirm({ id: item.id, title: item.title })}
-                                      className="p-1.5 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {item.content && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-3 whitespace-pre-wrap">
-                                    {item.content}
-                                  </p>
-                                )}
-
-                                {/* Inline tables */}
-                                {tables.length > 0 && (
-                                  <div className="mt-3 space-y-3">
-                                    {tables.map((tbl, ti) => (
-                                      <div key={ti}>
-                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-1">
-                                          <TableIcon className="h-3 w-3" /> Table {ti + 1}
-                                        </p>
-                                        <TableRenderer table={tbl} />
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {/* File attachment */}
-                                {item.meta?.file_url && (
-                                  <a
-                                    href={item.meta.file_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    download={item.meta.file_name}
-                                    className="mt-2 inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-700 hover:bg-orange-100 transition-colors"
-                                  >
-                                    <File className="h-3.5 w-3.5" />
-                                    {item.meta.file_name || "Download file"}
-                                    <Download className="h-3.5 w-3.5 ml-1" />
-                                  </a>
-                                )}
-
-                                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                  <Badge variant="outline" className={cn("text-xs capitalize", TYPE_COLORS[item.item_type] || "")}>
-                                    {item.item_type}
-                                  </Badge>
-                                  {tables.length > 0 && (
-                                    <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
-                                      <TableIcon className="h-2.5 w-2.5 mr-1" />
-                                      {tables.length} table{tables.length > 1 ? "s" : ""}
-                                    </Badge>
-                                  )}
-                                  {item.meta?.file_url && (
-                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
-                                      <File className="h-2.5 w-2.5 mr-1" /> Attachment
-                                    </Badge>
-                                  )}
-                                  {item.tags?.map((tag: string) => (
-                                    <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                                  ))}
-                                  {!item.is_published && (
-                                    <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">Draft</Badge>
-                                  )}
-                                  {item.view_count > 0 && (
-                                    <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
-                                      <Eye className="w-3 h-3" /> {item.view_count}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {item.meta?.url && (
-                                  <a
-                                    href={item.meta.url} target="_blank" rel="noopener noreferrer"
-                                    className="text-xs text-primary hover:underline mt-1 flex items-center gap-1"
-                                  >
-                                    <LinkIcon className="w-3 h-3" />
-                                    {item.meta.url}
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          ItemIcon={ItemIcon}
+                          tables={tables}
+                          onEdit={() => { setEditingItem(item); setItemDialog(true); }}
+                          onDelete={() => setDeleteConfirm({ id: item.id, title: item.title })}
+                        />
                       );
                     })}
                   </div>

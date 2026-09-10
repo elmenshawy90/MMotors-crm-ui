@@ -62,7 +62,14 @@ interface VehicleFormProps {
 export function VehicleForm({ initialData, onSuccess, prefillContactId }: VehicleFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
-  const [customModels, setCustomModels] = useState<string[]>([]);
+  const [customModels, setCustomModels] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("vehicle_custom_models");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [newModelName, setNewModelName] = useState("");
 
@@ -286,9 +293,26 @@ export function VehicleForm({ initialData, onSuccess, prefillContactId }: Vehicl
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Model</FormLabel>
-                <FormControl>
-                  <Input placeholder="Corolla, Civic, etc." className="transition-all focus:ring-2 focus:ring-primary/20" {...field} />
-                </FormControl>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="transition-all focus:ring-2 focus:ring-primary/20">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {customModels.length === 0 ? (
+                      <div className="py-3 px-2 text-sm text-center text-gray-500">
+                        No models available. Add models from the Vehicles page.
+                      </div>
+                    ) : (
+                      customModels.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}

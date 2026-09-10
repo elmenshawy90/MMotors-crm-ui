@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   UserPlus,
+  X,
+  ListFilter,
 } from "lucide-react";
 import { VehicleForm } from "@/components/forms/VehicleForm";
 import { ContactForm } from "@/components/forms/ContactForm";
@@ -58,6 +60,8 @@ export const Route = createFileRoute("/vehicles")({
   component: VehiclesPage,
 });
 
+const MODELS_STORAGE_KEY = "vehicle_custom_models";
+
 function VehiclesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -68,6 +72,39 @@ function VehiclesPage() {
   const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isAddContactDialogOpen, setIsAddContactDialogOpen] = useState(false);
+
+  // Custom models management
+  const [customModels, setCustomModels] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(MODELS_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
+  const [newModelInput, setNewModelInput] = useState("");
+
+  const saveCustomModels = (models: string[]) => {
+    setCustomModels(models);
+    localStorage.setItem(MODELS_STORAGE_KEY, JSON.stringify(models));
+  };
+
+  const addCustomModel = () => {
+    const trimmed = newModelInput.trim();
+    if (!trimmed) return;
+    if (customModels.includes(trimmed)) {
+      setNewModelInput("");
+      return;
+    }
+    saveCustomModels([...customModels, trimmed]);
+    setNewModelInput("");
+  };
+
+  const removeCustomModel = (model: string) => {
+    saveCustomModels(customModels.filter((m) => m !== model));
+    if (modelFilter === model) setModelFilter("all");
+  };
 
   // Fetch vehicles from API
   const { data: vehiclesData, isLoading: vehiclesLoading, refetch } = useQuery({
@@ -429,13 +466,101 @@ function VehiclesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Models</SelectItem>
-                    {Array.from(new Set(vehicles.map((v: any) => v.model))).map((model) => (
+                    {Array.from(
+                      new Set([
+                        ...vehicles.map((v: any) => v.model),
+                        ...customModels,
+                      ])
+                    ).map((model) => (
                       <SelectItem key={model} value={model}>
                         {model}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* ── Manage Models ── */}
+                <Dialog open={isModelsDialogOpen} onOpenChange={setIsModelsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 transition-all focus:ring-2 focus:ring-primary/20"
+                      title="Manage Models"
+                    >
+                      <ListFilter className="h-4 w-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <ListFilter className="h-5 w-5 text-primary" />
+                        Manage Models
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      {/* Add new model */}
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Enter model name..."
+                          value={newModelInput}
+                          onChange={(e) => setNewModelInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") addCustomModel();
+                          }}
+                          className="flex-1"
+                        />
+                        <Button onClick={addCustomModel} disabled={!newModelInput.trim()}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add
+                        </Button>
+                      </div>
+
+                      {/* Models list */}
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {customModels.length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-4">
+                            No custom models added yet.
+                          </p>
+                        ) : (
+                          customModels.map((model) => (
+                            <div
+                              key={model}
+                              className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-200"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Car className="h-4 w-4 text-gray-500" />
+                                <span className="text-sm font-medium text-gray-800">{model}</span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => removeCustomModel(model)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Models from API (read-only display) */}
+                      {vehicles.length > 0 && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs text-gray-500 mb-2">Models from existing vehicles:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Array.from(new Set(vehicles.map((v: any) => v.model))).map((model) => (
+                              <Badge key={model} variant="secondary" className="text-xs">
+                                {model}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <Select value={branchFilter} onValueChange={setBranchFilter}>
                   <SelectTrigger className="w-[180px] transition-all focus:ring-2 focus:ring-primary/20">
                     <SelectValue placeholder="Branch" />
