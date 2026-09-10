@@ -82,14 +82,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      if (token) {
-        const profile = await apiClient.getProfile();
-        const permissions = await fetchUserPermissions(profile);
-        setUser({ ...profile, permissions });
+      if (!token) {
+        // لا يوجد token — لا نحتاج طلب شبكة
+        return;
       }
-    } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+      const profile = await apiClient.getProfile();
+      const permissions = await fetchUserPermissions(profile);
+      setUser({ ...profile, permissions });
+    } catch (error: any) {
+      // نمسح الـ tokens فقط عند 401 (token منتهي/غير صالح)
+      // أخطاء الشبكة (CORS, 5xx, timeout) لا تستوجب تسجيل الخروج
+      const status = error?.response?.status;
+      if (status === 401 || status === 403) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+      // في حالة خطأ الشبكة نُبقي الـ user logged out بهدوء
     } finally {
       setLoading(false);
     }

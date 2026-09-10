@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from '@tanstack/react-router';
 import { useAuth } from '../contexts/auth-context';
 
@@ -10,9 +10,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // نمنع تكرار الـ redirect إذا نُفِّذ مرة
+  const redirected = useRef(false);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!loading && !isAuthenticated && !redirected.current) {
+      redirected.current = true;
       navigate({
         to: '/login',
         search: {
@@ -20,7 +23,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         },
       });
     }
-  }, [isAuthenticated, loading, navigate, location]);
+    // نُعيد الـ flag إذا رجع المستخدم authenticated
+    if (isAuthenticated) {
+      redirected.current = false;
+    }
+  }, [isAuthenticated, loading, navigate, location.href]);
 
   if (loading) {
     return (
@@ -34,7 +41,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isAuthenticated) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   return <>{children}</>;
