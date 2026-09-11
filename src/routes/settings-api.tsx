@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/settings-api")({
@@ -124,10 +125,10 @@ function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen">
-        <AppSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
-        <div className="flex-1">
-          <PageShell title="System Settings" subtitle="Manage your system configuration">
+      <div className="min-h-screen bg-background">
+        <AppSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} currentTitle="System Settings" />
+        <div className={cn("transition-all duration-300", sidebarCollapsed ? "ml-16" : "ml-64")}>
+          <PageShell title="System Settings" subtitle="Manage your system configuration" showTopbar={false}>
             <div className="flex items-center justify-center h-64">
               <RefreshCw className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -142,10 +143,10 @@ function SettingsPage() {
   };
 
   return (
-    <div className="flex min-h-screen">
-      <AppSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
-      <div className="flex-1">
-        <PageShell title="System Settings" subtitle="Manage your system configuration">
+    <div className="min-h-screen bg-background">
+      <AppSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} currentTitle="System Settings" />
+      <div className={cn("transition-all duration-300", sidebarCollapsed ? "ml-16" : "ml-64")}>
+        <PageShell title="System Settings" subtitle="Manage your system configuration" showTopbar={false}>
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
