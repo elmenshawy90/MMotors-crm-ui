@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { VehicleForm } from "@/components/forms/VehicleForm";
 import { ContactForm } from "@/components/forms/ContactForm";
+import { AppSidebar } from "@/components/AppSidebar";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,7 @@ function VehiclesPage() {
   const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isAddContactDialogOpen, setIsAddContactDialogOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Custom models management
   const [customModels, setCustomModels] = useState<string[]>(() => {
@@ -227,6 +229,13 @@ function VehiclesPage() {
   };
 
   return (
+    <div className="min-h-screen bg-background">
+      <AppSidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        currentTitle="Vehicle Management"
+      />
+      <div className={cn("transition-all duration-300", sidebarCollapsed ? "ml-16" : "ml-64")}>
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       {/* Header */}
       <div className="bg-gradient-to-r from-primary to-primary/80 text-white py-8 px-6 shadow-lg">
@@ -757,6 +766,8 @@ function VehiclesPage() {
             </CardContent>
           </Card>
         )}
+      </div>
+    </div>
       </div>
     </div>
   );

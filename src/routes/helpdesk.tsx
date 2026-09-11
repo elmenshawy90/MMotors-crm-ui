@@ -14,6 +14,7 @@ import {
 } from "@/lib/data";
 import { useTickets, useTicket } from "@/hooks/use-api";
 import apiClient from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -192,9 +193,17 @@ function HelpdeskPage() {
   };
 
   return (
+    <div className="min-h-screen bg-background">
+      <AppSidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        currentTitle="Helpdesk"
+      />
+      <div className={cn("transition-all duration-300", sidebarCollapsed ? "ml-16" : "ml-64")}>
     <PageShell
       title="Helpdesk"
       subtitle="After-sales tickets by stage, priority and SLA, connected to customers, vehicles and branches."
+      showTopbar={false}
     >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div className="relative">
@@ -551,5 +560,7 @@ function HelpdeskPage() {
         </div>
       </div>
     </PageShell>
+      </div>
+    </div>
   );
 }
